@@ -86,7 +86,7 @@ const menuItems = [
         </header>
 
         <div className="flex-1 overflow-y-auto p-6 bg-[#f8fafc]">
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-full mx-auto">
             {subTitle && (
               <div className="mb-6">
                 <h2 className="text-base font-bold text-slate-800 tracking-tight">{subTitle}</h2>
