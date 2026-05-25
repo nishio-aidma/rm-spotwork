@@ -1,10 +1,11 @@
-/* これを一番上に追加 */
+/* src/app/globals.css の一番上を以下に書き換え */
 html {
-  font-size: 115% !important; /* 全体を1.15倍に強制拡大 */
+  font-size: 108%; /* 115%から108%に下げてコンパクトに */
 }
 
 body {
-  font-size: 1.1rem !important; /* 標準の文字サイズをさらに底上げ */
+  font-size: 1rem; 
+  line-height: 1.5;
 }
 
 /* 小さすぎるラベル（text-smなどのクラス）も強制的に大きくする */
