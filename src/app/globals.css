@@ -1,3 +1,16 @@
+/* これを一番上に追加 */
+html {
+  font-size: 115% !important; /* 全体を1.15倍に強制拡大 */
+}
+
+body {
+  font-size: 1.1rem !important; /* 標準の文字サイズをさらに底上げ */
+}
+
+/* 小さすぎるラベル（text-smなどのクラス）も強制的に大きくする */
+.text-sm, .text-xs, [class*="text-["] {
+  font-size: 0.95rem !important; /* 9pxとか10pxとかの指定を無視して大きくする */
+}
 @import "tailwindcss";
 
 :root {
