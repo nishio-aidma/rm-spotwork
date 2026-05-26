@@ -1,22 +1,21 @@
 "use client";
 
-import { useState, Suspense } from "react"; // ★ Suspense を追加
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import OwnerShell from "@/components/OwnerShell";
 
-// ★ 元のコンポーネントの中身を別の関数（JobForm）に切り出します
 function JobForm() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [jobType, setJobType] = useState<'form_posting' | 'list_creation'>('form_posting');
   
-  // フォームの状態
   const [formData, setFormData] = useState({
     title: "",
     reward: 0,
-    count: 100,
+    count: 100,      // 予定作業件数
+    workerLimit: 1,  // 募集人数
     deadline: "",
     urgency: "1",
     siteUrl: "",
@@ -26,8 +25,7 @@ function JobForm() {
     procedures: ["", "", ""]
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (status: 'open' | 'draft') => {
     if (!auth.currentUser) return;
     setSubmitting(true);
 
@@ -36,12 +34,12 @@ function JobForm() {
         ...formData,
         jobType,
         ownerId: auth.currentUser.uid,
-        status: "open",
+        status: status,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         totalAccumulatedSeconds: 0
       });
-      alert("案件を公開しました");
+      alert(status === 'open' ? "案件を公開しました" : "下書きとして保存しました");
       router.push("/owner/jobs");
     } catch (error) {
       alert("エラーが発生しました");
@@ -58,7 +56,7 @@ function JobForm() {
 
   return (
     <div className="max-w-4xl mx-auto pb-20 text-slate-800">
-      <form onSubmit={handleSubmit} className="space-y-12">
+      <form onSubmit={(e) => e.preventDefault()} className="space-y-12">
         {/* 基本設定 */}
         <section className="space-y-6">
           <h2 className="text-sm font-bold border-l-4 border-slate-900 pl-3">基本設定</h2>
@@ -84,21 +82,24 @@ function JobForm() {
               <label className="text-[10px] font-bold text-slate-400 uppercase">案件タイトル</label>
               <input 
                 required
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" 
-                placeholder="例：【光システム様】フォーム投稿サブコン"
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none" 
                 value={formData.title}
                 onChange={e => setFormData({...formData, title: e.target.value})}
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-6">
+            <div className="grid grid-cols-4 gap-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">報酬 (￥)</label>
                 <input type="number" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" value={formData.reward} onChange={e => setFormData({...formData, reward: Number(e.target.value)})} />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">予定件数</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase">作業件数</label>
                 <input type="number" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" value={formData.count} onChange={e => setFormData({...formData, count: Number(e.target.value)})} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">募集人数</label>
+                <input type="number" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" value={formData.workerLimit} onChange={e => setFormData({...formData, workerLimit: Number(e.target.value)})} />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">優先度</label>
@@ -109,10 +110,15 @@ function JobForm() {
                 </select>
               </div>
             </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">期日</label>
+              <input type="date" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} />
+            </div>
           </div>
         </section>
 
-        {/* 詳細データ */}
+        {/* 作業詳細：ここが不足していました */}
         <section className="space-y-6">
           <h2 className="text-sm font-bold border-l-4 border-slate-900 pl-3">作業詳細</h2>
           <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-6">
@@ -130,19 +136,19 @@ function JobForm() {
             ) : (
               <>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">参照サイトURL</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">抽出サイトURL</label>
                   <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" value={formData.siteUrl} onChange={e => setFormData({...formData, siteUrl: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase">抽出・収集する項目</label>
-                  <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" placeholder="社名、電話番号、メールアドレスなど" value={formData.targetItems} onChange={e => setFormData({...formData, targetItems: e.target.value})} />
+                  <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" placeholder="社名、電話番号など" value={formData.targetItems} onChange={e => setFormData({...formData, targetItems: e.target.value})} />
                 </div>
               </>
             )}
           </div>
         </section>
 
-        {/* 作業手順 */}
+        {/* 作業手順：ここも不足していました */}
         <section className="space-y-6">
           <h2 className="text-sm font-bold border-l-4 border-slate-900 pl-3">具体的な手順 (3ステップ)</h2>
           <div className="space-y-3">
@@ -161,25 +167,35 @@ function JobForm() {
         </section>
 
         <div className="pt-10 flex gap-4">
-          <button type="button" onClick={() => router.back()} className="flex-1 py-4 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors">キャンセル</button>
-          <button 
-            type="submit" 
-            disabled={submitting}
-            className="flex-[2] py-4 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all shadow-lg disabled:opacity-50"
-          >
-            {submitting ? "公開中..." : "案件を公開する"}
-          </button>
+          <button type="button" onClick={() => router.back()} className="px-6 py-4 text-xs font-bold text-slate-400">キャンセル</button>
+          <div className="flex-1 flex gap-3">
+            <button 
+              type="button"
+              onClick={() => handleSubmit('draft')}
+              disabled={submitting}
+              className="flex-1 py-4 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 transition-all shadow-sm"
+            >
+              下書きとして保存
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleSubmit('open')}
+              disabled={submitting}
+              className="flex-[1.5] py-4 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all shadow-lg disabled:opacity-50"
+            >
+              {submitting ? "処理中..." : "案件を公開する"}
+            </button>
+          </div>
         </div>
       </form>
     </div>
   );
 }
 
-// ★ メインのページコンポーネントで全体を Suspense で囲む
 export default function NewJobPage() {
   return (
-    <OwnerShell title="新規案件の作成" subTitle="新しいタスクをワーカーに依頼します">
-      <Suspense fallback={<div className="p-10 text-center text-slate-400">読み込み中...</div>}>
+    <OwnerShell title="新規案件の作成" subTitle="案件の掲載設定">
+      <Suspense fallback={<div className="p-10 text-center text-slate-400">Loading...</div>}>
         <JobForm />
       </Suspense>
     </OwnerShell>

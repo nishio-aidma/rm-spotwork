@@ -27,17 +27,20 @@ export default function WorkerJobDetailPage() {
         if (snap.exists()) {
           const data = snap.data();
           setJob({ id: snap.id, ...data });
-          // 作業中状態であれば累積秒数を初期化
           if (data.status === "working") {
             setSeconds(data.totalAccumulatedSeconds || 0);
           }
         }
-      } catch (error) { console.error(error); } finally { setLoading(false); }
+      } catch (error) { 
+        console.error(error); 
+      } finally { 
+        setLoading(false); 
+      }
     }
     fetchData();
   }, [params.id]);
 
-  // タイマー処理：ステータスが「作業中」の時のみ1秒ずつ加算
+  // タイマー処理
   useEffect(() => {
     if (job?.status === "working") {
       timerRef.current = setInterval(() => {
@@ -56,7 +59,6 @@ export default function WorkerJobDetailPage() {
     return `${h}時間 ${m}分 ${sec}秒`;
   };
 
-  // 【確認ポップアップ】案件を引き受ける
   const handleAcceptJob = async () => {
     const ok = window.confirm("この案件を引き受けますか？\n引き受けると、あなたの「進行中のタスク」に追加されます。");
     if (!ok) return;
@@ -76,7 +78,6 @@ export default function WorkerJobDetailPage() {
     } finally { setSubmitting(false); }
   };
 
-  // 【確認ポップアップ】作業開始
   const handleStartWork = async () => {
     const ok = window.confirm("作業を開始し、時間の計測を始めますか？");
     if (!ok) return;
@@ -95,7 +96,6 @@ export default function WorkerJobDetailPage() {
     } finally { setSubmitting(false); }
   };
 
-  // 一時停止
   const handlePauseWork = async () => {
     setSubmitting(true);
     try {
@@ -112,7 +112,6 @@ export default function WorkerJobDetailPage() {
     } finally { setSubmitting(false); }
   };
 
-  // 【確認ポップアップ】作業完了
   const handleCompleteWork = async () => {
     const ok = window.confirm("作業を完了し、オーナーへ検収を依頼しますか？\nこの操作は取り消せません。");
     if (!ok) return;
@@ -126,6 +125,7 @@ export default function WorkerJobDetailPage() {
         submittedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+      // マイタスクへ移動
       router.push("/worker/my-jobs");
     } catch (e) {
       alert("完了報告に失敗しました。");
@@ -138,62 +138,68 @@ export default function WorkerJobDetailPage() {
   const isMyJob = job.workerId === auth.currentUser?.uid;
 
   return (
-    <WorkerShell title="案件詳細" subTitle={job.title}>
-      <div className="max-w-4xl mx-auto pb-32 text-slate-700">
+    <WorkerShell title="案件詳細" subTitle="業務内容の確認と計測">
+      <div className="max-w-5xl mx-auto pb-32 text-slate-800">
         
         {/* 1. 戻るリンク */}
-        <div className="mb-10 pt-4">
-          <button onClick={() => router.back()} className="text-sm text-slate-400 hover:text-slate-800 transition-colors flex items-center gap-1">
-            ← 案件一覧に戻る
+        <div className="mb-10">
+          <button onClick={() => router.back()} className="text-[10px] font-bold text-slate-400 hover:text-slate-900 transition-all flex items-center gap-1 uppercase tracking-widest">
+            ← 案件一覧へ戻る
           </button>
         </div>
 
-        {/* 2. 案件名 */}
-        <div className="mb-12">
+        {/* 2. ヘッダーエリア */}
+        <div className="mb-12 border-b border-slate-100 pb-8">
           <div className="flex gap-2 mb-4">
-            <span className="text-[11px] font-medium px-2 py-0.5 bg-slate-100 text-slate-500 rounded border border-slate-200">
-              {job.jobType === 'form_posting' ? 'フォーム投稿' : 'リスト作成'}
+            <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-50 text-slate-500 rounded border border-slate-200">
+              {job.jobType === 'form_posting' ? '✉️ フォーム投稿' : '📋 リスト作成'}
             </span>
-            {job.urgency === "3" && <span className="text-[11px] font-bold px-2 py-0.5 bg-red-50 text-red-500 rounded border border-red-100">至急</span>}
+            {job.urgency === "3" && <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-50 text-rose-500 rounded border border-rose-100 uppercase">至急</span>}
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 leading-tight">{job.title}</h1>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight leading-snug">{job.title}</h1>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-16 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 items-start">
           
           {/* 左側：メイン情報 */}
           <div className="lg:col-span-2 space-y-12">
             
             <section className="space-y-6">
-              <h2 className="text-base font-bold text-slate-900">案件内容</h2>
-              <div className="border-t border-slate-200 pt-6 space-y-8">
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-l-4 border-slate-900 pl-3">案件内容</h2>
+              <div className="pt-2 space-y-8">
+                {/* 案件タイプによる指示内容の切り替え */}
                 {job.jobType === "form_posting" ? (
                   <div className="space-y-3">
-                    <label className="text-xs font-bold text-slate-400">送信文面</label>
-                    <div className="text-sm leading-relaxed text-slate-600 bg-slate-50 p-6 rounded-md whitespace-pre-wrap">
-                      {job.formContent || "未入力"}
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">送信文面 / メッセージ</label>
+                    <div className="text-sm leading-relaxed text-slate-700 bg-slate-50 p-6 rounded-xl border border-slate-100 whitespace-pre-wrap">
+                      {job.formContent || "文面の指定はありません。"}
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <label className="text-xs font-bold text-slate-400">参照サイトURL</label>
-                    <div className="mt-1">
-                      <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 underline break-all">
-                        {job.siteUrl || "URLなし"}
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">参照サイトURL</label>
+                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 overflow-hidden">
+                      <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 underline break-all flex items-center gap-2">
+                        {job.siteUrl || "URLの指定はありません。"} <span>↗</span>
                       </a>
                     </div>
                   </div>
                 )}
                 
-                <div className="grid grid-cols-2 gap-8 border-t border-slate-100 pt-8">
+                {/* グリッド型情報（募集人数を追加） */}
+                <div className="grid grid-cols-3 gap-8 border-t border-slate-50 pt-8">
                   <div>
-                    <label className="text-xs font-bold text-slate-400 mb-2 block">抽出項目 / 入力情報</label>
-                    <p className="text-sm font-medium">{job.targetItems || job.inputInfo || "指定なし"}</p>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">抽出 / 入力情報</label>
+                    <p className="text-sm font-bold">{job.targetItems || job.inputInfo || "指定なし"}</p>
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-400 mb-2 block">期限 / 報酬</label>
-                    <p className="text-sm font-medium">
-                      {job.deadline || "なし"} / <span className="text-blue-600">¥{job.reward?.toLocaleString()}</span>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">募集人数</label>
+                    <p className="text-sm font-bold text-slate-800">{job.workerLimit || 1} 名</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">報酬 / 件数</label>
+                    <p className="text-sm font-bold">
+                      <span className="text-indigo-600">¥{job.reward?.toLocaleString()}</span> / {job.count || "-"}件
                     </p>
                   </div>
                 </div>
@@ -201,41 +207,41 @@ export default function WorkerJobDetailPage() {
             </section>
 
             <section className="space-y-6">
-              <h2 className="text-base font-bold text-slate-900">具体的な作業手順</h2>
-              <div className="border-t border-slate-200 pt-4 divide-y divide-slate-100">
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-l-4 border-slate-900 pl-3">作業手順</h2>
+              <div className="space-y-3">
                 {Array.isArray(job.procedures) && job.procedures.length > 0 ? (
                   job.procedures.map((step, i) => (
-                    <div key={i} className="py-4 flex gap-6 items-start group">
-                      <span className="text-xs font-medium text-slate-300 pt-0.5">{i + 1}</span>
-                      <p className="text-sm text-slate-600 leading-relaxed">{step}</p>
+                    <div key={i} className="flex gap-4 items-center bg-white border border-slate-100 p-4 rounded-lg">
+                      <span className="text-[10px] font-bold text-slate-300">0{i + 1}</span>
+                      <p className="text-sm font-medium text-slate-700">{step || "未設定"}</p>
                     </div>
                   ))
                 ) : (
-                  <p className="py-6 text-sm text-slate-400 italic">手順の指定はありません。</p>
+                  <p className="text-sm text-slate-400 italic py-4">手順の指定はありません。</p>
                 )}
               </div>
             </section>
           </div>
 
-          {/* 右側：コントロールパネル（Notion風にシンプルに） */}
+          {/* 右側：コントロールパネル */}
           <aside className="sticky top-10 space-y-6">
-            <div className="border border-slate-200 rounded-lg p-6 bg-white">
+            <div className="border border-slate-200 rounded-2xl p-6 bg-white shadow-sm">
               <div className="mb-8">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">現在の状態</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">ステータス</label>
                 <div className="text-sm font-bold text-slate-800">
-                  {job.status === 'open' ? '未受諾' : 
-                   job.status === 'assigned' ? '請負済み' : 
-                   job.status === 'working' ? '現在作業中' : 
-                   job.status === 'paused' ? '一時停止中' : 
-                   job.status === 'review' ? '検収待ち' : job.status}
+                  {job.status === 'open' ? '募集中の案件' : 
+                   job.status === 'assigned' ? '受諾済み・準備中' : 
+                   job.status === 'working' ? '🔴 作業計測中' : 
+                   job.status === 'paused' ? '⏸️ 一時停止中' : 
+                   job.status === 'review' ? '⌛ 検収待ち' : job.status}
                 </div>
               </div>
 
               {/* タイマー表示 */}
               {(job.status === "working" || job.status === "paused") && (
-                <div className="mb-8 p-4 bg-slate-50 border border-slate-100 rounded-md">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">経過時間</label>
-                  <p className="text-lg font-bold text-blue-600 tabular-nums">{formatTime(seconds)}</p>
+                <div className="mb-8 p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">計測時間</label>
+                  <p className="text-xl font-bold text-indigo-600 tabular-nums">{formatTime(seconds)}</p>
                 </div>
               )}
 
@@ -244,7 +250,7 @@ export default function WorkerJobDetailPage() {
                   <button 
                     onClick={handleAcceptJob} 
                     disabled={submitting}
-                    className="w-full py-2.5 bg-slate-900 text-white text-xs font-bold rounded hover:bg-slate-800 transition-colors disabled:opacity-50"
+                    className="w-full py-3 bg-slate-900 text-white text-[11px] font-bold rounded-lg hover:bg-slate-800 transition-all shadow-md disabled:opacity-50"
                   >
                     案件を引き受ける
                   </button>
@@ -254,7 +260,7 @@ export default function WorkerJobDetailPage() {
                       <button 
                         onClick={handleStartWork} 
                         disabled={submitting}
-                        className="w-full py-2.5 bg-blue-600 text-white text-xs font-bold rounded hover:bg-blue-700 transition-colors shadow-sm"
+                        className="w-full py-3 bg-indigo-600 text-white text-[11px] font-bold rounded-lg hover:bg-indigo-700 transition-all shadow-md"
                       >
                         作業を開始する
                       </button>
@@ -264,22 +270,22 @@ export default function WorkerJobDetailPage() {
                         <button 
                           onClick={handlePauseWork} 
                           disabled={submitting}
-                          className="w-full py-2.5 bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded hover:bg-slate-50 transition-colors"
+                          className="w-full py-3 bg-white border border-slate-200 text-slate-600 text-[11px] font-bold rounded-lg hover:bg-slate-50 transition-all"
                         >
                           一時停止する
                         </button>
                         <button 
                           onClick={handleCompleteWork} 
                           disabled={submitting}
-                          className="w-full py-2.5 bg-emerald-600 text-white text-xs font-bold rounded hover:bg-emerald-700 transition-colors"
+                          className="w-full py-3 bg-emerald-600 text-white text-[11px] font-bold rounded-lg hover:bg-emerald-700 transition-all shadow-md"
                         >
-                          作業完了・報告する
+                          作業完了を報告
                         </button>
                       </div>
                     )}
                     {job.status === "review" && (
-                      <div className="p-4 bg-amber-50 border border-amber-100 rounded-md text-center">
-                        <span className="text-[11px] font-bold text-amber-700">検収待ち</span>
+                      <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-center">
+                        <span className="text-[11px] font-bold text-amber-700">検収待ちの状態です</span>
                       </div>
                     )}
                   </>
@@ -288,7 +294,7 @@ export default function WorkerJobDetailPage() {
             </div>
             
             <p className="text-[10px] text-slate-400 leading-relaxed px-1">
-              作業を開始するとタイマーが稼働します。完了報告を行うと、オーナーに通知され検収が行われます。
+              ※作業完了を報告するとオーナーに通知されます。検収が完了すると報酬が確定します。
             </p>
           </aside>
 

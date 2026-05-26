@@ -50,7 +50,11 @@ export default function WorkerDetailPage() {
         const recentSnap = await getDocs(recentLogQ);
         setLogs(recentSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-      } catch (e) { console.error(e); } finally { setLoading(false); }
+      } catch (e) { 
+        console.error(e); 
+      } finally { 
+        setLoading(false); 
+      }
     }
     if (!authLoading) fetchWorkerDetail();
   }, [id, owner, authLoading]);
@@ -58,62 +62,69 @@ export default function WorkerDetailPage() {
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
-    return `${h}h ${m}m`;
+    return `${h}時間 ${m}分`;
   };
 
-  if (authLoading || loading) return <OwnerShell title="Worker Detail">Loading...</OwnerShell>;
-  if (!worker) return <OwnerShell title="Error">Worker not found.</OwnerShell>;
+  if (authLoading || loading) return <OwnerShell title="ワーカー詳細"><div className="p-10 text-slate-400 text-center text-sm">読み込み中...</div></OwnerShell>;
+  if (!worker) return <OwnerShell title="エラー"><div className="p-10 text-center">ワーカーが見つかりませんでした。</div></OwnerShell>;
 
   return (
-    <OwnerShell title="Worker Profile" subTitle={`${worker.lastName} ${worker.firstName} さんの詳細`}>
-      <div className="max-w-4xl mx-auto space-y-6 pb-20 font-sans">
+    <OwnerShell title="ワーカープロファイル" subTitle={`${worker.lastName} ${worker.firstName} さんの活動詳細`}>
+      <div className="max-w-4xl mx-auto space-y-8 pb-20 text-slate-800 font-sans">
         
-        <button onClick={() => router.back()} className="text-[10px] font-black text-slate-400 hover:text-indigo-600 transition-all">← BACK TO LIST</button>
+        {/* 戻るボタン */}
+        <button onClick={() => router.back()} className="text-[10px] font-bold text-slate-400 hover:text-slate-900 transition-all uppercase tracking-widest italic">
+          ← ワーカー一覧へ戻る
+        </button>
 
         {/* 基本情報カード */}
-        <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm flex items-center gap-8">
-          <div className="w-20 h-20 bg-indigo-600 text-white rounded-2xl flex items-center justify-center text-3xl font-black shadow-lg shadow-indigo-100">
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm flex items-center gap-8">
+          <div className="w-20 h-20 bg-slate-900 text-white rounded-2xl flex items-center justify-center text-3xl font-bold shadow-lg shadow-slate-100 uppercase">
             {worker.lastName?.charAt(0)}
           </div>
           <div className="flex-1">
-            <h2 className="text-2xl font-black text-slate-800">{worker.lastName} {worker.firstName}</h2>
-            <p className="text-xs text-slate-400 font-mono mt-1">{worker.email}</p>
+            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
+              {worker.lastName} {worker.firstName}
+            </h2>
+            <p className="text-sm text-slate-400 font-medium mt-1">{worker.email}</p>
             <div className="flex gap-4 mt-4">
-              <div className="bg-slate-50 px-3 py-1 rounded-md text-[10px] font-bold text-slate-500">登録日: {worker.createdAt?.toDate().toLocaleDateString()}</div>
+              <div className="bg-slate-50 px-3 py-1 rounded-md text-[10px] font-bold text-slate-400 border border-slate-100">
+                登録日: {worker.createdAt?.toDate().toLocaleDateString()}
+              </div>
             </div>
           </div>
         </div>
 
         {/* 統計ボックス */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-3xl">
-            <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-1">Total Work Time</span>
-            <span className="text-2xl font-black text-indigo-700">{formatTime(stats.totalSeconds)}</span>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="bg-white border border-slate-200 p-8 rounded-2xl shadow-sm">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">総稼働時間</span>
+            <span className="text-3xl font-bold text-slate-900 tracking-tight">{formatTime(stats.totalSeconds)}</span>
           </div>
-          <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-3xl">
-            <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest block mb-1">Completed Jobs</span>
-            <span className="text-2xl font-black text-emerald-700">{stats.completedCount} <span className="text-sm">件</span></span>
+          <div className="bg-white border border-slate-200 p-8 rounded-2xl shadow-sm">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">完了案件数</span>
+            <span className="text-3xl font-bold text-slate-900 tracking-tight">{stats.completedCount} <span className="text-sm font-medium text-slate-400">件</span></span>
           </div>
         </div>
 
         {/* 直近の稼働履歴 */}
-        <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Activities / 直近の稼働</h3>
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-slate-50 flex justify-between items-center">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">直近の活動履歴</h3>
           </div>
           <div className="divide-y divide-slate-50">
             {logs.length > 0 ? logs.map(log => (
-              <div key={log.id} className="px-6 py-4 flex justify-between items-center">
+              <div key={log.id} className="px-6 py-5 flex justify-between items-center hover:bg-slate-50 transition-colors">
                 <div>
-                  <div className="text-[11px] font-bold text-slate-700">{log.jobTitle}</div>
-                  <div className="text-[9px] text-slate-400 font-mono">{log.timestamp?.toDate().toLocaleString()}</div>
+                  <div className="text-[12px] font-bold text-slate-700">{log.jobTitle}</div>
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">{log.timestamp?.toDate().toLocaleString()}</div>
                 </div>
-                <div className="text-[11px] font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">
+                <div className="text-[11px] font-bold text-slate-900 bg-slate-100 px-3 py-1.5 rounded-lg font-mono">
                   {Math.floor(log.seconds / 60)}m {log.seconds % 60}s
                 </div>
               </div>
             )) : (
-              <div className="p-10 text-center text-slate-300 italic text-xs">稼働履歴がありません</div>
+              <div className="p-16 text-center text-slate-300 italic text-sm">稼働履歴はまだありません</div>
             )}
           </div>
         </div>

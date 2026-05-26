@@ -71,44 +71,46 @@ export default function OwnerSettingsPage() {
     }
   };
 
-  if (authLoading || loading) return <OwnerShell title="Settings">Loading...</OwnerShell>;
+  if (authLoading || loading) return <OwnerShell title="システム設定"><div className="p-10 text-slate-400 text-center text-sm">読み込み中...</div></OwnerShell>;
 
   return (
-    <OwnerShell title="Settings" subTitle="CSV出力テンプレート設定">
-      <div className="max-w-4xl space-y-8 font-sans text-slate-900 pb-20">
+    <OwnerShell title="システム設定" subTitle="CSV出力テンプレートの管理">
+      <div className="max-w-4xl space-y-8 font-sans text-slate-800 pb-20">
         
-        <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl flex items-start gap-3">
-          <span className="text-lg">⚙️</span>
-          <p className="text-[11px] text-amber-700 leading-relaxed">
+        {/* インフォメーション */}
+        <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex items-start gap-4 shadow-sm">
+          <span className="text-xl">⚙️</span>
+          <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
             ここで設定した項目と列名の順番で、報酬支払い用のCSVデータが生成されます。<br />
-            不要な項目はチェックを外して無効化してください。
+            外部の会計ソフトや管理システムに合わせて、不要な項目の無効化や名称の変更を行ってください。
           </p>
         </div>
 
+        {/* 設定テーブル */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <table className="w-full text-left border-collapse">
-            <thead className="bg-slate-50 border-b border-slate-100">
+            <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-16">有効</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">データ項目</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">CSV列名（ヘッダー）</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">順序</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-16">有効</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">データ項目</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">CSV列名（ヘッダー）</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">表示順</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-slate-100">
               {fields.map((field, index) => (
-                <tr key={field.id} className={field.enabled ? "bg-white" : "bg-slate-50/50 opacity-60"}>
+                <tr key={field.id} className={`${field.enabled ? "bg-white" : "bg-slate-50/50 opacity-50"} transition-all`}>
                   <td className="px-6 py-4 text-center">
                     <input 
                       type="checkbox" 
                       checked={field.enabled} 
                       onChange={() => handleToggle(field.id)}
-                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
                     />
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-[11px] font-bold text-slate-700">{field.label}</div>
-                    <div className="text-[9px] text-slate-400 font-mono">{field.id}</div>
+                    <div className="text-[12px] font-bold text-slate-700">{field.label}</div>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{field.id}</div>
                   </td>
                   <td className="px-6 py-4">
                     <input 
@@ -116,13 +118,26 @@ export default function OwnerSettingsPage() {
                       value={field.defaultHeader} 
                       onChange={(e) => handleHeaderChange(field.id, e.target.value)}
                       disabled={!field.enabled}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-[11px] outline-none focus:border-indigo-300 transition-all"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 text-[12px] font-medium outline-none focus:border-slate-400 focus:bg-white transition-all"
+                      placeholder="列名を入力"
                     />
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-1">
-                      <button onClick={() => moveField(index, 'up')} className="p-1 hover:bg-slate-100 rounded text-slate-400">▲</button>
-                      <button onClick={() => moveField(index, 'down')} className="p-1 hover:bg-slate-100 rounded text-slate-400">▼</button>
+                      <button 
+                        onClick={() => moveField(index, 'up')} 
+                        disabled={index === 0}
+                        className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 disabled:opacity-20 transition-colors"
+                      >
+                        <span className="text-xs">▲</span>
+                      </button>
+                      <button 
+                        onClick={() => moveField(index, 'down')} 
+                        disabled={index === fields.length - 1}
+                        className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 disabled:opacity-20 transition-colors"
+                      >
+                        <span className="text-xs">▼</span>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -131,11 +146,12 @@ export default function OwnerSettingsPage() {
           </table>
         </div>
 
+        {/* 保存ボタン */}
         <div className="flex justify-end">
           <button 
             onClick={saveSettings}
             disabled={saving}
-            className="bg-indigo-600 text-white px-8 py-3 rounded-xl text-xs font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50"
+            className="bg-slate-900 text-white px-10 py-3.5 rounded-2xl text-[11px] font-bold shadow-lg hover:bg-slate-800 transition-all disabled:opacity-50"
           >
             {saving ? "保存中..." : "設定を保存する"}
           </button>

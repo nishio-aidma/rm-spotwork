@@ -48,50 +48,50 @@ export default function OwnerUsersPage() {
     if (!authLoading) fetchWorkersWithLastActive();
   }, [user, authLoading]);
 
-  if (authLoading || loading) return <OwnerShell title="ワーカー管理"><div className="p-10 text-slate-400 text-center text-sm">データを取得中...</div></OwnerShell>;
+  if (authLoading || loading) return <OwnerShell title="ワーカー管理"><div className="p-10 text-slate-400 text-center text-sm">読み込み中...</div></OwnerShell>;
 
   return (
     <OwnerShell title="ワーカー管理" subTitle="登録作業者の活動状況と管理">
-      <div className="max-w-5xl mx-auto space-y-6 pb-20 text-slate-800">
+      <div className="max-w-5xl mx-auto space-y-6 pb-20 text-slate-800 font-sans">
         
         <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest">作業者一覧</h2>
-          <Link href="/owner/users/new" className="bg-slate-900 text-white px-5 py-2 rounded text-[11px] font-bold hover:bg-slate-800 transition-all shadow-sm">
+          <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">作業者一覧 ({workers.length})</h2>
+          <Link href="/owner/users/new" className="bg-slate-900 text-white px-5 py-2 rounded-lg text-[11px] font-bold hover:bg-slate-800 transition-all shadow-sm">
             ＋ 新規ワーカー登録
           </Link>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <table className="w-full text-left border-collapse table-auto">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">名前</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">名前 / メールアドレス</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center whitespace-nowrap">登録日</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center whitespace-nowrap">最終稼働日</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center whitespace-nowrap">最終稼働</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right whitespace-nowrap">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-[12px]">
+            <tbody className="divide-y divide-slate-100">
               {workers.map((w) => (
-                <tr key={w.id} className="hover:bg-slate-50/50 transition-colors">
+                <tr key={w.id} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-6 py-4">
-                    <div className="font-bold text-slate-700">{w.lastName} {w.firstName}</div>
-                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{w.email}</div>
+                    <div className="text-sm font-bold text-slate-700">{w.lastName} {w.firstName}</div>
+                    <div className="text-[10px] text-slate-400 font-medium mt-0.5">{w.email}</div>
                   </td>
-                  <td className="px-6 py-4 text-center text-slate-500 font-mono">
+                  <td className="px-6 py-4 text-center text-[11px] text-slate-500 font-mono">
                     {w.createdAt?.toDate().toLocaleDateString() || "-"}
                   </td>
                   <td className="px-6 py-4 text-center">
                     {w.lastActive ? (
-                      <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-1 rounded text-[11px] font-bold font-mono">
+                      <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2.5 py-1 rounded-md text-[10px] font-bold font-mono">
                         {w.lastActive.toLocaleDateString()}
                       </span>
                     ) : (
-                      <span className="text-slate-300 italic text-[11px]">未稼働</span>
+                      <span className="text-slate-300 italic text-[10px]">未稼働</span>
                     )}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <Link href={`/owner/users/${w.id}`} className="text-slate-400 hover:text-indigo-600 font-bold text-[11px] underline decoration-slate-200 underline-offset-4">
+                    <Link href={`/owner/users/${w.id}`} className="text-slate-400 group-hover:text-slate-900 font-bold text-[10px] underline decoration-slate-200 underline-offset-4 transition-all">
                       詳細を確認 ≫
                     </Link>
                   </td>
