@@ -15,22 +15,24 @@ interface OwnerShellProps {
 export default function OwnerShell({ children, title, subTitle }: OwnerShellProps) {
   const pathname = usePathname();
 
+  // src/components/OwnerShell.tsx
+
   const navigation = [
     { name: 'ダッシュボード', href: '/owner/dashboard', icon: '📊' },
     { name: '案件管理', href: '/owner/jobs', icon: '📁' },
-    { name: 'ワーカー管理', href: '/owner/workers', icon: '👥' },
+    { name: 'ワーカー管理', href: '/owner/users', icon: '👥' }, 
     { name: 'データ出力', href: '/owner/export', icon: '📥' },
     { name: 'システム設定', href: '/owner/settings', icon: '⚙️' },
     { name: 'ランク設定', href: '/owner/settings/ranks', icon: '🏆' },
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex">
-      {/* サイドメニューの復活 */}
+    <div className="min-h-screen bg-[#F8FAFC] flex font-sans">
+      {/* サイドメニュー */}
       <aside className="w-64 bg-white border-r border-slate-200 hidden lg:flex flex-col flex-shrink-0">
         <div className="p-8">
-          <h1 className="text-indigo-600 font-black italic text-sm tracking-tighter">
-            OWNER <span className="text-slate-400">MANAGEMENT</span>
+          <h1 className="text-slate-900 font-bold italic text-sm tracking-tighter">
+            OWNER <span className="text-slate-400 font-medium">MANAGEMENT</span>
           </h1>
         </div>
 
@@ -41,9 +43,9 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
               <Link
                 key={item.name}
                 href={item.href}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-[11px] font-bold transition-all ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-[11px] font-bold transition-all ${
                   isActive 
-                    ? 'bg-indigo-50 text-indigo-600' 
+                    ? 'bg-slate-100 text-slate-900 shadow-sm' 
                     : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
                 }`}
               >
@@ -57,7 +59,7 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
         <div className="p-4 border-t border-slate-100">
           <button
             onClick={() => signOut(auth)}
-            className="flex items-center gap-3 w-full px-4 py-3 text-[11px] font-bold text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+            className="flex items-center gap-3 w-full px-4 py-3 text-[11px] font-bold text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
           >
             <span className="text-base">🚪</span>
             ログアウト
@@ -73,11 +75,12 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
             <span className="text-slate-300">/</span>
             <span className="text-slate-800">{title}</span>
           </div>
+          {/* ✅ SIGN OUT を ログアウト に修正 */}
           <button 
             onClick={() => signOut(auth)}
-            className="text-[9px] font-black text-slate-400 hover:text-rose-500 uppercase tracking-tighter transition-all"
+            className="text-[9px] font-bold text-slate-400 hover:text-rose-500 uppercase tracking-tight transition-all"
           >
-            SIGN OUT
+            ログアウト
           </button>
         </header>
 
@@ -85,8 +88,8 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
           <div className="max-w-full mx-auto">
             {subTitle && (
               <div className="mb-6">
-                <h2 className="text-base font-bold text-slate-800 tracking-tight uppercase">{subTitle}</h2>
-                <div className="h-0.5 w-8 bg-indigo-500 mt-1 rounded-full"></div>
+                <h2 className="text-sm font-bold text-slate-800 tracking-tight">{subTitle}</h2>
+                <div className="h-0.5 w-6 bg-slate-900 mt-1 rounded-full"></div>
               </div>
             )}
             {children}
