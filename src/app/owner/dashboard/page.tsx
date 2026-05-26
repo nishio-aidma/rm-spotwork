@@ -99,6 +99,7 @@ export default function OwnerDashboard() {
           const job = jobsMap[log.jobId] || {};
           aggregation[key] = {
             workerName: userMap[log.workerId] || "不明",
+            scClient: job.scClient || "", // ★ ここにSCクライアントを追加
             jobTitle: log.jobTitle || job.title || "不明",
             jobType: job.jobType === 'form_posting' ? 'フォーム投稿' : 'リスト作成',
             durationHours: 0,
@@ -147,7 +148,6 @@ export default function OwnerDashboard() {
           <StatCard label="進行中の案件" value={stats.activeJobs} unit="件" />
           <StatCard label="総稼働時間 (完了分)" value={formatTime(stats.totalSeconds)} />
           
-          {/* 月次出力セクション：デザインを他と統一 */}
           <div className="bg-slate-900 p-6 rounded-2xl shadow-lg flex flex-col justify-between">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">月次データ出力</span>
             <div className="flex items-center gap-2 mt-4">
@@ -206,7 +206,6 @@ export default function OwnerDashboard() {
           </div>
         </section>
 
-        {/* クイックリンク */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <ShortcutButton href="/owner/jobs/new" icon="📝" label="新規案件を作成する" />
           <ShortcutButton href="/owner/jobs" icon="🗂️" label="案件一覧・検収管理へ" />

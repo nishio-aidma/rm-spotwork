@@ -22,6 +22,7 @@ function JobForm() {
     targetItems: "",
     formContent: "",
     inputInfo: "",
+    scClient: "",    // SCクライアント
     procedures: ["", "", ""]
   });
 
@@ -118,10 +119,22 @@ function JobForm() {
           </div>
         </section>
 
-        {/* 作業詳細：ここが不足していました */}
+        {/* 作業詳細 */}
         <section className="space-y-6">
           <h2 className="text-sm font-bold border-l-4 border-slate-900 pl-3">作業詳細</h2>
           <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-6">
+            
+            {/* ★ SCクライアント：タイプを問わず共通で表示 */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">SCクライアント</label>
+              <input 
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none" 
+                placeholder="案件に紐づくクライアント名を入力"
+                value={formData.scClient}
+                onChange={e => setFormData({...formData, scClient: e.target.value})} 
+              />
+            </div>
+
             {jobType === 'form_posting' ? (
               <>
                 <div className="space-y-2">
@@ -148,7 +161,7 @@ function JobForm() {
           </div>
         </section>
 
-        {/* 作業手順：ここも不足していました */}
+        {/* 作業手順 */}
         <section className="space-y-6">
           <h2 className="text-sm font-bold border-l-4 border-slate-900 pl-3">具体的な手順 (3ステップ)</h2>
           <div className="space-y-3">

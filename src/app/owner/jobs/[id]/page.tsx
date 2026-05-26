@@ -45,7 +45,7 @@ export default function OwnerJobDetailPage({ params }: { params: Promise<{ id: s
     }
   };
 
-  // ★ 取り下げ処理（はみ出していた部分をコンポーネント内に戻しました）
+  // 取り下げ処理
   const handleWithdraw = async () => {
     if (!confirm("この案件を取り下げて下書きに戻しますか？\n※ワーカーからは閲覧できなくなります。")) return;
     setSaving(true);
@@ -94,7 +94,6 @@ export default function OwnerJobDetailPage({ params }: { params: Promise<{ id: s
             </div>
           </div>
 
-          {/* ★ ボタンエリア：ここを正しく統合しました */}
           <div className="flex gap-3">
             {isEditing ? (
               <>
@@ -118,8 +117,8 @@ export default function OwnerJobDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
 
-        {/* メイングリッド情報 */}
-        <div className="grid grid-cols-4 gap-6 py-8 border-b border-slate-50">
+        {/* メイングリッド情報：SCクライアントを追加し、5列構成に調整 */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-6 py-8 border-b border-slate-50">
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">報酬</p>
             {isEditing ? (
@@ -149,7 +148,20 @@ export default function OwnerJobDetailPage({ params }: { params: Promise<{ id: s
             )}
           </div>
 
-          {/* ★ 募集人数（workerLimit）を追加しました */}
+          {/* ★ SCクライアント項目を追加 */}
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">SCクライアント</p>
+            {isEditing ? (
+              <input 
+                className="text-sm font-bold w-full bg-slate-50 p-1" 
+                value={editData.scClient || ""} 
+                onChange={e => setEditData({...editData, scClient: e.target.value})} 
+              />
+            ) : (
+              <p className="text-sm font-bold text-slate-800">{job.scClient || "-"}</p>
+            )}
+          </div>
+
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">募集人数</p>
             {isEditing ? (

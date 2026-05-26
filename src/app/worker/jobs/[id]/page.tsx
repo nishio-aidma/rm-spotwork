@@ -186,8 +186,13 @@ export default function WorkerJobDetailPage() {
                   </div>
                 )}
                 
-                {/* グリッド型情報（募集人数を追加） */}
-                <div className="grid grid-cols-3 gap-8 border-t border-slate-50 pt-8">
+                {/* グリッド型情報：SCクライアントを追加し、4列構成（スマホ時は2列）に調整 */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-8 border-t border-slate-50 pt-8">
+                  {/* ★ SCクライアントを表示 */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">SCクライアント</label>
+                    <p className="text-sm font-bold text-slate-800">{job.scClient || "-"}</p>
+                  </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">抽出 / 入力情報</label>
                     <p className="text-sm font-bold">{job.targetItems || job.inputInfo || "指定なし"}</p>

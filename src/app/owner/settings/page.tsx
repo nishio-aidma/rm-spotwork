@@ -9,6 +9,7 @@ import OwnerShell from "@/components/OwnerShell";
 // デフォルトのテンプレート定義
 const DEFAULT_FIELDS = [
   { id: "workerName", label: "ワーカー名", defaultHeader: "氏名", enabled: true },
+  { id: "scClient", label: "SCクライアント", defaultHeader: "SCクライアント", enabled: true }, // ★ 追加
   { id: "jobTitle", label: "案件名", defaultHeader: "案件名", enabled: true },
   { id: "jobType", label: "仕事種別", defaultHeader: "区分", enabled: true },
   { id: "durationHours", label: "稼働時間 (時間)", defaultHeader: "稼働時間(h)", enabled: true },
@@ -29,7 +30,15 @@ export default function OwnerSettingsPage() {
       try {
         const snap = await getDoc(doc(db, "settings", "csv_template"));
         if (snap.exists()) {
-          setFields(snap.data().fields);
+          const savedFields = snap.data().fields;
+          
+          // ★ 新しい項目（scClient）が保存済みデータにない場合でも、リストに表示されるようにマージ
+          const merged = DEFAULT_FIELDS.map(df => {
+            const saved = savedFields.find((sf: any) => sf.id === df.id);
+            return saved ? saved : df;
+          });
+          
+          setFields(merged);
         }
       } catch (e) {
         console.error(e);
@@ -77,7 +86,6 @@ export default function OwnerSettingsPage() {
     <OwnerShell title="システム設定" subTitle="CSV出力テンプレートの管理">
       <div className="max-w-4xl space-y-8 font-sans text-slate-800 pb-20">
         
-        {/* インフォメーション */}
         <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex items-start gap-4 shadow-sm">
           <span className="text-xl">⚙️</span>
           <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
@@ -86,7 +94,6 @@ export default function OwnerSettingsPage() {
           </p>
         </div>
 
-        {/* 設定テーブル */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200">
@@ -146,7 +153,6 @@ export default function OwnerSettingsPage() {
           </table>
         </div>
 
-        {/* 保存ボタン */}
         <div className="flex justify-end">
           <button 
             onClick={saveSettings}
