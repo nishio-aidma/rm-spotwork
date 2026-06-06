@@ -1,580 +1,284 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { doc, getDoc, updateDoc, serverTimestamp, collection, addDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import OwnerShell from "@/components/OwnerShell";
 import { useRouter } from "next/navigation";
+import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
+import OwnerShell from "@/components/OwnerShell";
 
 interface OwnerJobDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
-const isValidUrl = (url: string) => {
-  try {
-    return url && (url.startsWith("http://") || url.startsWith("https://"));
-  } catch {
-    return false;
-  }
-};
-
-const formatTime = (s: number) => {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${h}h ${m}m ${sec}s`;
-};
-
 export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) {
   const { id } = use(params);
   const router = useRouter();
+  const { user, loading: authLoading } = useRequireAuth("owner");
   const [job, setJob] = useState<any>(null);
-  const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false); // 保存・検収完了・複製作成の二重連打防止用
+  const [submitting, setSubmitting] = useState(false);
 
-  // オーナー用カスタムポップアップ管理用のステート群
+  // 💡シンプルモダン確認ポップアップ用の管理ステート
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalTitle, setModalTitle] = useState("");
-  const [modalMessage, setModalMessage] = useState("");
-  const [modalActionType, setModalActionType] = useState<"withdraw" | "duplicate" | "approve" | null>(null);
-
-  // 編集用のローカルステート
-  const [editData, setEditData] = useState<any>({});
-
-  // 💡【新設】オーナーが手動修正するための「時・分・秒」専用の入力ステート
-  const [inputHours, setInputHours] = useState(0);
-  const [inputMinutes, setInputMinutes] = useState(0);
-  const [inputSeconds, setInputSeconds] = useState(0);
+  // 💡どのアクション（下書き戻し or 検収承認）を呼ぶかを識別するステート
+  const [modalType, setModalType] = useState<"draft" | "approve" | null>(null);
 
   useEffect(() => {
     async function fetchJob() {
+      if (!id || !user) return;
       try {
-        const snap = await getDoc(doc(db, "jobs", id));
+        const docRef = doc(db, "jobs", id);
+        const snap = await getDoc(docRef);
         if (snap.exists()) {
-          const data = snap.data();
-          setJob(data);
-          setEditData(data);
-
-          // 💡初期読み込み時に、現在の総秒数を「時・分・秒」に分解して入力欄の初期値にする
-          const totalSec = data.totalAccumulatedSeconds || 0;
-          setInputHours(Math.floor(totalSec / 3600));
-          setInputMinutes(Math.floor((totalSec % 3600) / 60));
-          setInputSeconds(totalSec % 60);
+          setJob({ id: snap.id, ...snap.data() });
         }
-      } catch (e) {
-        console.error(e);
-      } finally { 
+      } catch (error) {
+        console.error(error);
+      } finally {
         setLoading(false);
       }
     }
-    fetchJob();
-  }, [id]);
+    if (!authLoading) fetchJob();
+  }, [id, user, authLoading]);
 
-  // 変更保存処理（修正モード時）
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      // 💡【重要】オーナーが入力した「時・分・秒」を、裏側で「通算秒数」へ再計算・合算します
-      const calculatedTotalSeconds = (inputHours * 3600) + (inputMinutes * 60) + inputSeconds;
-
-      const finalData = {
-        ...editData,
-        totalAccumulatedSeconds: calculatedTotalSeconds, // 修正された秒数を格納
-        updatedAt: serverTimestamp()
-      };
-
-      await updateDoc(doc(db, "jobs", id), finalData);
-      setJob(finalData);
-      setIsEditing(false);
-      alert("案件情報および作業時間を更新しました");
-    } catch (e) {
-      alert("更新に失敗しました");
-    } finally {
-      setSaving(false);
-    }
+  // 時間テキスト変換
+  const formatTime = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return `${h}h ${m}m ${sec}s`;
   };
 
-  // オーナー用ポップアップをトリガーする窓口
-  const triggerOwnerModal = (type: "withdraw" | "duplicate" | "approve") => {
-    setModalActionType(type);
-    if (type === "withdraw") {
-      setModalTitle("📥 募集取り下げの確認");
-      setModalMessage("この案件を取り下げて下書きに戻しますか？\n実行するとワーカー側の案件一覧リストから即座に非表示になります。");
-    } else if (type === "duplicate") {
-      setModalTitle("📑 案件コピーの作成");
-      setModalMessage("この案件の設定（手順・URL・クライアント等）を完全に引き継いだ、新しい「下書き案件」を複製しますか？");
-    } else if (type === "approve") {
-      setModalTitle("🏁 検収完了（承認確定）");
-      setModalMessage("ワーカーから届いた報告を承認し、検収を完了しますか？\n実行するとステータスが「完了」となり、この案件の作業枠が正常に締め切られます。");
-    }
+  // 💡ポップアップを起動する窓口
+  const triggerModal = (type: "draft" | "approve") => {
+    setModalType(type);
     setModalOpen(true);
   };
 
-  // ポップアップ内の「はい、実行する」を押したときの確定ターミナル
+  // 💡【確定処理】カスタムポップアップ内から実行される選択ロジック
   const handleModalConfirm = async () => {
+    const action = modalType;
     setModalOpen(false);
-    if (!modalActionType || !job) return;
+    setModalType(null);
+    if (!job || !action) return;
 
-    setSaving(true);
+    setSubmitting(true);
     try {
-      if (modalActionType === "withdraw") {
-        await updateDoc(doc(db, "jobs", id), { 
-          status: 'draft',
+      const jobRef = doc(db, "jobs", job.id);
+
+      if (action === "draft") {
+        await updateDoc(jobRef, {
+          status: "draft",
           updatedAt: serverTimestamp()
         });
-        alert("案件を取り下げました（下書きに戻しました）");
-        router.push("/owner/jobs");
+        setJob((prev: any) => ({ ...prev, status: "draft" }));
+        alert("案件を受諾募集停止にし、下書き状態へ戻しました。");
       } 
-      else if (modalActionType === "duplicate") {
-        const duplicatedData = {
-          title: `${job.title}（コピー）`,
-          jobType: job.jobType || "form_posting",
-          scClient: job.scClient || "",
-          count: job.count || 0,
-          workerLimit: job.workerLimit || 1,
-          deadline: job.deadline || "",
-          urgency: job.urgency || "1",
-          siteUrl: job.siteUrl || "",
-          targetItems: job.targetItems || "",
-          formContent: job.formContent || "",
-          inputInfo: job.inputInfo || "",
-          procedures: job.procedures || [],
-          memo: job.memo || "",
-          reward: job.reward || 0,
-          ownerId: job.ownerId || "",
-          status: "draft",
-          totalAccumulatedSeconds: 0,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        };
-
-        const docRef = await addDoc(collection(db, "jobs"), duplicatedData);
-        alert("案件の複製が完了しました。新しく生成された「下書きページ」へジャンプします。");
-        router.push(`/owner/jobs/${docRef.id}`);
-      } 
-      else if (modalActionType === "approve") {
-        await updateDoc(doc(db, "jobs", id), {
-          status: 'completed',
+      
+      else if (action === "approve") {
+        await updateDoc(jobRef, {
+          status: "completed",
           approvedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
-        alert("検収が完了しました。作業を承認しました。");
-        router.push("/owner/jobs");
+        setJob((prev: any) => ({ ...prev, status: "completed" }));
+        alert("案件を承認（検収完了）しました！");
       }
     } catch (e) {
       console.error(e);
       alert("処理に失敗しました。");
     } finally {
-      setSaving(false);
-      setModalActionType(null);
+      setSubmitting(false);
     }
   };
 
-  if (loading) return <OwnerShell title="読み込み中..."><div className="p-10 text-center text-slate-400 text-xs font-bold">発注データを照合中...</div></OwnerShell>;
-  if (!job) return <OwnerShell title="エラー"><div className="p-10 text-center text-rose-600 font-bold text-xs">案件が見つかりませんでした。</div></OwnerShell>;
+  if (authLoading || loading) return <OwnerShell title="読み込み中..."><div className="p-10 text-center text-slate-400 text-xs font-bold">案件情報を照会中...</div></OwnerShell>;
+  if (!job) return <OwnerShell title="エラー"><div className="p-10 text-center text-rose-600 font-bold text-xs">指定された案件が見つかりませんでした。</div></OwnerShell>;
 
   return (
-    <OwnerShell title="案件詳細・管理" subTitle={isEditing ? "発注情報の修正編集" : "掲載内容および検収の確認"}>
+    <OwnerShell title="案件詳細・管理デスク" subTitle="発注内容の確認とワーカー稼働状況の監視">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 max-w-full mx-auto pb-32 text-slate-900 font-sans antialiased">
         
-        {/* 【左側メインエリア：8カラム分】 */}
+        {/* 左側：メイン情報明細 */}
         <div className="lg:col-span-8 space-y-4">
-          
-          {/* 上部ナビバー */}
-          <div className="flex justify-between items-center bg-white border-2 border-slate-300 p-4 rounded shadow-sm">
-            <button type="button" onClick={() => router.push("/owner/jobs")} className="text-[11px] font-black text-[#0082C8] hover:underline flex items-center gap-1">
-              ← 案件管理一覧に戻る
+          <div className="flex justify-between items-center bg-white border-2 border-slate-300 p-3 rounded shadow-sm">
+            <button 
+              type="button"
+              onClick={() => router.push("/owner/jobs")} 
+              className="bg-slate-100 border-2 border-slate-400 hover:bg-slate-200 text-slate-800 text-[11px] font-black px-4 py-1.5 rounded transition-all active:scale-95 shadow-sm"
+            >
+              🔙 案件管理（一覧）に戻る
             </button>
             <div className="flex gap-2">
               <span className="bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded font-bold text-[10px]">
                 {job.jobType === 'form_posting' ? '✉️ フォーム投稿' : '📋 リスト作成'}
               </span>
+              {job.urgency === "3" && (
+                <span className="text-[10px] font-black px-1.5 py-0.5 bg-rose-50 text-rose-700 rounded border border-rose-300 animate-pulse">至急</span>
+              )}
             </div>
           </div>
 
-          {/* タイトルコンテナ */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 shadow-sm">
-            {isEditing ? (
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">案件タイトル（編集）</label>
-                <input 
-                  className="w-full p-2 bg-slate-50 border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8]"
-                  value={editData.title}
-                  onChange={e => setEditData({...editData, title: e.target.value})}
-                />
+            <span className="text-[9px] font-mono text-slate-400 font-black block mb-1">JOB TITLE</span>
+            <h1 className="text-base font-black tracking-tight text-slate-950 leading-snug">{job.title}</h1>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 bg-white border-2 border-slate-300 rounded overflow-hidden divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-300 shadow-sm">
+            <div className="p-3 flex flex-col justify-between min-h-[64px]">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント名</span>
+              <p className="text-xs font-black text-slate-900 truncate mt-1">{job.scClient || "-"}</p>
+            </div>
+            <div className="p-3 flex flex-col justify-between min-h-[64px]">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                {job.jobType === 'form_posting' ? '送信文面指示書' : '抽出項目指示書'}
+              </span>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-mono truncate max-w-[120px]">{job.inputInfo || job.targetItems || "未登録"}</span>
+                {(job.inputInfo || job.targetItems) && (
+                  <a href={job.inputInfo || job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-2 py-0.5 rounded transition-colors shadow-sm whitespace-nowrap">開く ↗</a>
+                )}
               </div>
-            ) : (
-              <h1 className="text-base font-black tracking-tight text-slate-950 leading-snug">{job.title}</h1>
-            )}
-          </div>
-
-          {/* 作業詳細URL設定 */}
-          <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-4 shadow-sm">
-            {job.jobType === 'form_posting' ? (
-              <>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">送信文面内容（スプレッドシート等URL）</label>
-                  {isEditing ? (
-                    <div className="flex gap-2">
-                      <input type="url" className="flex-1 p-2 bg-slate-50 border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]" value={editData.formContent || ""} onChange={e => setEditData({...editData, formContent: e.target.value})} />
-                      {isValidUrl(editData.formContent) && <a href={editData.formContent} target="_blank" rel="noopener noreferrer" className="bg-white border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#0082C8] whitespace-nowrap">↗ テスト</a>}
-                    </div>
-                  ) : (
-                    <div className="bg-slate-50 border border-slate-300 rounded p-2.5">
-                      {job.formContent ? (
-                        <a href={job.formContent} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded transition-colors shadow-sm">
-                          📄 送信文面シートを開く ↗
-                        </a>
-                      ) : <span className="text-xs text-slate-400 italic">未設定</span>}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力情報（リスト等URL）</label>
-                  {isEditing ? (
-                    <div className="flex gap-2">
-                      <input type="url" className="flex-1 p-2 bg-slate-50 border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]" value={editData.inputInfo || ""} onChange={e => setEditData({...editData, inputInfo: e.target.value})} />
-                      {isValidUrl(editData.inputInfo) && <a href={editData.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-white border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#0082C8] whitespace-nowrap">↗ テスト</a>}
-                    </div>
-                  ) : (
-                    <div className="bg-slate-50 border border-slate-300 rounded p-2.5">
-                      {job.inputInfo ? (
-                        <a href={job.inputInfo} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded transition-colors shadow-sm">
-                          📂 入力情報リストを開く ↗
-                        </a>
-                      ) : <span className="text-xs text-slate-400 italic">未設定</span>}
-                    </div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">抽出サイトURL</label>
-                  {isEditing ? (
-                    <div className="flex gap-2">
-                      <input type="url" className="flex-1 p-2 bg-slate-50 border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]" value={editData.siteUrl || ""} onChange={e => setEditData({...editData, siteUrl: e.target.value})} />
-                      {isValidUrl(editData.siteUrl) && <a href={editData.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-white border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#0082C8] whitespace-nowrap">↗ テスト</a>}
-                    </div>
-                  ) : (
-                    <div className="bg-slate-50 border border-slate-300 rounded p-2.5">
-                      {job.siteUrl ? (
-                        <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded transition-colors shadow-sm break-all">
-                          🌐 抽出対象サイトを開く ↗
-                        </a>
-                      ) : <span className="text-xs text-slate-400 italic">未設定</span>}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力項目（指示書等URL）</label>
-                  {isEditing ? (
-                    <div className="flex gap-2">
-                      <input type="url" className="flex-1 p-2 bg-slate-50 border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]" value={editData.targetItems || ""} onChange={e => setEditData({...editData, targetItems: e.target.value})} />
-                      {isValidUrl(editData.targetItems) && <a href={editData.targetItems} target="_blank" rel="noopener noreferrer" className="bg-white border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#0082C8] whitespace-nowrap">↗ テスト</a>}
-                    </div>
-                  ) : (
-                    <div className="bg-slate-50 border border-slate-300 rounded p-2.5">
-                      {job.targetItems ? (
-                        <a href={job.targetItems} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded transition-colors shadow-sm">
-                          📂 入力項目指示書を開く ↗
-                        </a>
-                      ) : <span className="text-xs text-slate-400 italic">未設定</span>}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* スペックグリッド */}
-          <div className="grid grid-cols-2 md:grid-cols-4 bg-white border-2 border-slate-300 rounded overflow-hidden divide-x-2 divide-y-2 md:divide-y-0 divide-slate-300 shadow-sm">
-            <div className="p-3 space-y-0.5">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント</span>
-              {isEditing ? (
-                <input className="w-full bg-slate-50 border border-slate-300 rounded p-1 text-xs font-bold" value={editData.scClient || ""} onChange={e => setEditData({...editData, scClient: e.target.value})} />
-              ) : (
-                <p className="text-xs font-bold text-slate-800 truncate">{job.scClient || "-"}</p>
-              )}
             </div>
-            <div className="p-3 space-y-0.5">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">期日</span>
-              {isEditing ? (
-                <input type="date" className="w-full bg-slate-50 border border-slate-300 rounded p-1 text-xs font-mono font-bold" value={editData.deadline || ""} onChange={e => setEditData({...editData, deadline: e.target.value})} />
-              ) : (
-                <p className="text-xs font-bold text-slate-800 font-mono">{job.deadline || "未設定"}</p>
-              )}
-            </div>
-            <div className="p-3 space-y-0.5">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">募集人数 / 予定数</span>
-              {isEditing ? (
-                <div className="flex gap-1">
-                  <input type="number" className="w-1/2 bg-slate-50 border border-slate-300 rounded p-1 text-xs font-bold" value={editData.workerLimit || 1} onChange={e => setEditData({...editData, workerLimit: Number(e.target.value)})} />
-                  <input type="number" className="w-1/2 bg-slate-50 border border-slate-300 rounded p-1 text-xs font-bold" value={editData.count || 0} onChange={e => setEditData({...editData, count: Number(e.target.value)})} />
-                </div>
-              ) : (
-                <p className="text-xs font-black text-slate-900">
-                  {job.workerLimit || 1}名 / <span className="font-mono">{job.count || 0}件</span>
-                </p>
-              )}
-            </div>
-            <div className="p-3 space-y-0.5">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">優先度</span>
-              {isEditing ? (
-                <select className="w-full bg-slate-50 border border-slate-300 rounded p-1 text-xs font-bold" value={editData.urgency || "1"} onChange={e => setEditData({...editData, urgency: e.target.value})}>
-                  <option value="1">通常</option>
-                  <option value="2">高め</option>
-                  <option value="3">至急</option>
-                </select>
-              ) : (
-                <p className="text-xs font-bold text-slate-800">
-                  {job.urgency === "3" ? "🔴 至急" : job.urgency === "2" ? "🟡 高め" : "通常"}
-                </p>
-              )}
+            <div className="p-3 flex flex-col justify-between min-h-[64px]">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">予定作業件数</span>
+              <p className="text-xs font-black text-slate-900 font-mono text-right mt-1">{job.count || 0} 件</p>
             </div>
           </div>
 
-          {/* 作業手順明細 */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
-            <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-emerald-600 pl-2">作業手順明細</h2>
-            <div className="divide-y-2 divide-slate-200 border-2 border-slate-200 rounded overflow-hidden bg-slate-50">
-              {(isEditing ? editData.procedures || ["", "", ""] : job.procedures || []).map((step: string, i: number) => (
-                <div key={i} className="flex gap-3 items-center p-2.5 bg-white text-xs">
-                  <span className="text-[11px] bg-slate-100 border border-slate-300 text-slate-500 px-1.5 py-0.5 font-mono font-bold rounded">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  {isEditing ? (
-                    <input 
-                      className="flex-1 p-1 bg-slate-50 border border-slate-300 rounded text-xs font-medium outline-none" 
-                      value={step}
-                      onChange={e => {
-                        const newPro = [...editData.procedures];
-                        newPro[i] = e.target.value;
-                        setEditData({...editData, procedures: newPro});
-                      }}
-                    />
-                  ) : (
-                    <p className="text-xs font-bold text-slate-800 flex-1">{step || "未設定"}</p>
-                  )}
-                </div>
-              ))}
+            <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">
+              {job.jobType === "form_posting" ? "送信文面・内容データURL" : "抽出ターゲットサイトURL"}
+            </h2>
+            <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded p-2 text-xs">
+              <span className="font-mono text-slate-600 truncate max-w-md">{job.formContent || job.siteUrl || "URL指定なし"}</span>
+              {(job.formContent || job.siteUrl) && (
+                <a href={job.formContent || job.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">リンク先を開く ↗</a>
+              )}
             </div>
           </div>
 
-          {/* 特記事項 / メモ欄 */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
-            <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-amber-500 pl-2">特記事項 / メモ欄</h2>
-            {isEditing ? (
-              <textarea 
-                rows={3}
-                className="w-full p-2 bg-slate-50 border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]"
-                placeholder="特記事項や社内メモを入力してください"
-                value={editData.memo || ""}
-                onChange={e => setEditData({...editData, memo: e.target.value})}
-              />
-            ) : (
-              <div className="bg-amber-50/20 border border-amber-200 rounded p-3 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap font-medium">
-                {job.memo || "特記事項はありません。"}
-              </div>
-            )}
+            <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-emerald-600 pl-2">設定された作業手順</h2>
+            <div className="divide-y divide-slate-200 border border-slate-200 rounded overflow-hidden">
+              {Array.isArray(job.procedures) && job.procedures.length > 0 ? (
+                job.procedures.map((step: string, i: number) => (
+                  <div key={i} className="flex gap-3 items-center p-2.5 bg-white text-xs">
+                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 font-mono font-bold rounded">{i + 1}</span>
+                    <p className="font-bold text-slate-800 flex-1">{step || "未設定"}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 text-center text-[10px] text-slate-400 italic">手順の手順指定はありません。</div>
+              )}
+            </div>
           </div>
-
         </div>
 
-        {/* 【右側エリア：4カラム分】お会計・検収コントロールコンソール */}
-        <div className="lg:col-span-4 lg:sticky lg:top-4 h-fit">
+        {/* 右側：コントロールサイドインフラ */}
+        <div className="lg:col-span-4 h-fit space-y-3">
           <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden">
-            
-            <div className="bg-slate-100 p-3 border-b-2 border-slate-300 flex justify-between items-center">
-              <span className="text-xs font-black text-slate-700">発注・検収ステータス</span>
-              <span className="text-[10px] font-mono font-bold text-slate-400">CONSOLE</span>
+            <div className="bg-slate-100 p-3 border-b-2 border-slate-300 flex justify-between items-center select-none">
+              <span className="text-xs font-black text-slate-700">案件統括ステータス</span>
+              <span className="text-[10px] font-mono font-bold text-slate-400">CONTROL</span>
             </div>
 
             <div className="p-4 space-y-4">
-              
-              {/* ステータスバッジの大きな表示セル */}
               <div className="bg-slate-50 border-2 border-slate-200 p-3 rounded text-center">
-                <div className={`text-sm font-black ${job.status === 'review' ? 'text-amber-600 animate-pulse' : 'text-slate-800'}`}>
-                  {job.status === 'draft' ? '📁 一時下書き保存中' : 
-                   job.status === 'open' ? '🔓 募集中（作業者未定）' : 
-                   job.status === 'assigned' ? '📥 請負中（準備期間中）' : 
-                   job.status === 'working' ? '🔴 ワーカー実稼働計測中' : 
-                   job.status === 'paused' ? '⏸️ 作業一時停止中' : 
-                   job.status === 'review' ? '⌛ ⭐ 検収依頼が届いています' : 
-                   job.status === 'completed' ? '🏁 業務完了（検収承認済み）' : job.status}
+                <div className="text-xs font-black text-slate-800">
+                  {job.status === 'open' ? '🔓 募集中（ワーカー未定）' : 
+                   job.status === 'draft' ? '📋 下書き保存中（非公開）' : 
+                   job.status === 'assigned' ? '📥 受諾済み（作業準備中）' : 
+                   job.status === 'working' ? '🔴 ワーカー作業中（タイマー稼働）' : 
+                   job.status === 'paused' ? '⏸️ 一時中断中' : 
+                   job.status === 'review' ? '⌛ 検収待ち（報告提出済み）' : 
+                   job.status === 'completed' ? '🏁 検収完了（取引終了）' : job.status}
                 </div>
               </div>
 
-              {/* タイムカード実績確認コンソール */}
-              {(job.status !== 'open' && job.status !== 'draft') && (
-                <div className="p-4 bg-slate-950 text-white rounded font-mono shadow-inner space-y-3">
-                  <div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-0.5">ASSIGNED WORKER / 担当者ID</span>
-                    <p className="text-xs font-bold text-slate-200 truncate">{job.workerId || "未割当"}</p>
-                  </div>
-                  
-                  <div className="border-t border-slate-800 pt-2">
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-1">ACCUMULATED TIME / 累積稼働</span>
-                    
-                    {/* 💡【新設】isEditing（修正モード）のときは、時・分・秒を手動入力できるスマートスロットに変身！ */}
-                    {isEditing ? (
-                      <div className="flex items-center gap-1.5 text-slate-900 font-sans pt-1">
-                        <div className="flex items-center gap-0.5">
-                          <input 
-                            type="number" 
-                            min="0"
-                            className="w-12 p-1 text-center bg-white border border-slate-400 rounded text-xs font-black font-mono" 
-                            value={inputHours} 
-                            onChange={e => setInputHours(Math.max(0, Number(e.target.value)))}
-                          />
-                          <span className="text-[10px] font-black text-slate-400">h</span>
-                        </div>
-                        <div className="flex items-center gap-0.5">
-                          <input 
-                            type="number" 
-                            min="0"
-                            max="59"
-                            className="w-12 p-1 text-center bg-white border border-slate-400 rounded text-xs font-black font-mono" 
-                            value={inputMinutes} 
-                            onChange={e => setInputMinutes(Math.min(59, Math.max(0, Number(e.target.value))))}
-                          />
-                          <span className="text-[10px] font-black text-slate-400">m</span>
-                        </div>
-                        <div className="flex items-center gap-0.5">
-                          <input 
-                            type="number" 
-                            min="0"
-                            max="59"
-                            className="w-12 p-1 text-center bg-white border border-slate-400 rounded text-xs font-black font-mono" 
-                            value={inputSeconds} 
-                            onChange={e => setInputSeconds(Math.min(59, Math.max(0, Number(e.target.value))))}
-                          />
-                          <span className="text-[10px] font-black text-slate-400">s</span>
-                        </div>
-                      </div>
-                    ) : (
-                      /* 通常モード時はこれまで通りフォーマットされた美しい合計時間を表示 */
-                      <p className="text-xl font-black text-emerald-400 tracking-tight tabular-nums">{formatTime(job.totalAccumulatedSeconds || 0)}</p>
-                    )}
-                  </div>
-                </div>
-              )}
+              <div className="p-3.5 bg-blue-50/60 border border-blue-200 text-slate-900 rounded font-sans shadow-inner space-y-1">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">TOTAL TIME / 累積稼働実績</span>
+                <p className="text-xl font-black text-[#0082C8] tracking-tight font-mono tabular-nums">
+                  {formatTime(job.totalAccumulatedSeconds || 0)}
+                </p>
+              </div>
 
-              {/* アクションボタン */}
-              <div className="space-y-2 pt-2">
-                {isEditing ? (
-                  <>
-                    <button 
-                      type="button" 
-                      onClick={handleSave} 
-                      disabled={saving} 
-                      className="w-full py-3 bg-slate-900 text-white text-xs font-black rounded border border-black/10 hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-50"
-                    >
-                      {saving ? "データ保存中..." : "💾 修正内容と時間を確定・保存"}
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => { 
-                        setIsEditing(false); 
-                        setEditData(job); 
-                        // キャンセル時は元の時間に戻す
-                        const totalSec = job.totalAccumulatedSeconds || 0;
-                        setInputHours(Math.floor(totalSec / 3600));
-                        setInputMinutes(Math.floor((totalSec % 3600) / 60));
-                        setInputSeconds(totalSec % 60);
-                      }} 
-                      className="w-full py-2 bg-white border-2 border-slate-300 text-slate-600 text-xs font-black rounded hover:bg-slate-50 transition-colors"
-                    >
-                      編集をキャンセル
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {job.status === 'review' && (
-                      <button 
-                        type="button"
-                        onClick={() => triggerOwnerModal("approve")} 
-                        disabled={saving}
-                        className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-md disabled:opacity-50"
-                      >
-                        🏁 検収を完了する（承認）
-                      </button>
-                    )}
-
-                    {job.status === 'open' && (
-                      <button 
-                        type="button"
-                        onClick={() => triggerOwnerModal("withdraw")} 
-                        disabled={saving}
-                        className="w-full py-2.5 bg-white border-2 border-rose-300 hover:bg-rose-50 text-rose-600 text-xs font-black rounded transition-colors"
-                      >
-                        📥 募集を取り下げて下書きに戻す
-                      </button>
-                    )}
-
-                    <button 
-                      type="button"
-                      onClick={() => triggerOwnerModal("duplicate")}
-                      disabled={saving}
-                      className="w-full py-2.5 bg-slate-100 border-2 border-slate-400 hover:bg-slate-200 text-slate-800 text-xs font-black rounded transition-colors shadow-sm disabled:opacity-50"
-                    >
-                      📑 この案件をコピーして複製
-                    </button>
-
-                    <button 
-                      type="button"
-                      onClick={() => setIsEditing(true)} 
-                      className="w-full py-2.5 bg-white border-2 border-slate-400 hover:bg-slate-50 text-slate-800 text-xs font-black rounded transition-colors shadow-sm"
-                    >
-                      🛠️ この掲載内容を修正する
-                    </button>
-                  </>
+              <div className="space-y-2">
+                {/* 💡古い window.confirm ではなくカスタムモーダルを美しく起動 */}
+                {job.status === "open" && (
+                  <button 
+                    type="button"
+                    onClick={() => triggerModal("draft")}
+                    disabled={submitting}
+                    className="w-full py-2.5 bg-slate-200 hover:bg-slate-300 border border-slate-400 text-slate-700 text-xs font-black rounded transition-colors text-center"
+                  >
+                    🔒 募集を停止して下書きに戻す
+                  </button>
                 )}
-              </div>
 
+                {job.status === "review" && (
+                  <button 
+                    type="button"
+                    onClick={() => triggerModal("approve")}
+                    disabled={submitting}
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded border border-black/10 shadow-md transition-colors"
+                  >
+                    ✓ 稼働時間を承認して検収完了にする
+                  </button>
+                )}
+
+                <button 
+                  type="button"
+                  onClick={() => router.push(`/owner/jobs/${job.id}/edit`)}
+                  className="w-full py-2 bg-white hover:bg-slate-50 border-2 border-slate-300 text-slate-700 text-xs font-black rounded transition-colors text-center"
+                >
+                  ✏️ この案件を編集する
+                </button>
+              </div>
             </div>
           </div>
-          
-          <p className="text-[10px] text-slate-400 leading-relaxed p-2 font-medium">
-            ※ワーカーから完了報告が届くとステータスが「検収待ち」になります。内容と累積時間を確認のうえ、承認を行ってください。
-          </p>
         </div>
 
       </div>
 
-      {/* オーナー用 ポップアップ（モーダル） */}
+      {/* 💡【超シンプル化リフォーム】フチ線や影を全撤去した極上シンプルデザインを適用 */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 font-sans antialiased">
-          <div className="bg-white border-4 border-slate-950 w-full max-w-sm rounded shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] overflow-hidden text-slate-900">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            <div className="bg-slate-950 text-white p-3 font-black text-xs flex justify-between items-center tracking-wider select-none">
-              <span>{modalTitle}</span>
-              <span className="text-[9px] font-mono font-bold text-slate-400">OWNER CONSOLE</span>
+            {/* ポップアップヘッダー */}
+            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
+              <span>{modalType === "draft" ? "🔒 募集停止の確認" : "✓ 案件の検収承認確認"}</span>
             </div>
 
-            <div className="p-5 border-b-2 border-slate-200 bg-slate-50">
-              <p className="text-xs font-bold text-slate-700 leading-relaxed whitespace-pre-wrap">
-                {modalMessage}
+            {/* ポップアップ本文 */}
+            <div className="p-6 bg-white">
+              <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
+                {modalType === "draft" 
+                  ? "この案件の受諾募集を一度ストップし、非公開の『下書き状態』に戻しますか？\n\n戻すと、ワーカー側の案件を探す画面から一時的に表示が消えます。"
+                  : "この案件の作業内容および稼働時間を承認（検収完了）しますか？\n\n確定するとステータスが『完了』となり、ワーカーの実績として確定します。"
+                }
               </p>
             </div>
 
-            <div className="grid grid-cols-2 divide-x-4 divide-slate-950 border-t-2 border-slate-950 bg-white">
+            {/* アクションボタン */}
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
-                className="py-3.5 bg-white text-slate-600 hover:bg-slate-100 font-black text-xs text-center transition-colors outline-none tracking-wide"
+                onClick={() => { setModalOpen(false); setModalType(null); }}
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
               >
-                ❌ いいえ
+                キャンセル
               </button>
               <button
                 type="button"
                 onClick={handleModalConfirm}
-                className="py-3.5 bg-slate-900 text-white hover:bg-slate-800 font-black text-xs text-center transition-colors outline-none tracking-wide"
+                className={`px-4 py-2 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm ${
+                  modalType === "draft" ? "bg-[#0082C8] hover:bg-[#0072B5]" : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
               >
-                ⭕ はい、実行する
+                {modalType === "draft" ? "はい、下書きに戻す" : "はい、承認する"}
               </button>
             </div>
 
