@@ -20,6 +20,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
+  // 💡 secondsには「これまでの過去の確定した合計秒数」＋「現在進行中の差分秒数」がリアルタイムに入ります
   const [seconds, setSeconds] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -29,6 +30,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [modalMessage, setModalMessage] = useState("");
   const [modalActionType, setModalActionType] = useState<"accept" | "start" | "pause" | "complete" | null>(null);
 
+  // 初期データの取得
   useEffect(() => {
     async function fetchData() {
       const user = auth.currentUser;
@@ -39,9 +41,10 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
         if (snap.exists()) {
           const data = snap.data();
           setJob({ id: snap.id, ...data });
-          if (data.status === "working") {
-            setSeconds(data.totalAccumulatedSeconds || 0);
-          }
+          
+          // 💡初期化ロジック：基本は過去の累計秒数をセット
+          const baseSec = data.totalAccumulatedSeconds || 0;
+          setSeconds(baseSec);
         }
 
         const wishSnap = await getDoc(doc(db, "wishlists", `${user.uid}_${id}`));
@@ -49,23 +52,49 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
       } catch (error) { 
         console.error(error); 
-      } finally { // 💡残っていたタイポを完全に一掃しました（finally に統一）
+      } finally { 
         setLoading(false);
       }
     }
     fetchData();
   }, [id]);
 
+  // 💡最強の打刻タイマー監視ロジック：1秒ごとに「現在時刻 - 開始時刻」を引き算して反映
   useEffect(() => {
     if (job?.status === "working") {
-      timerRef.current = setInterval(() => {
-        setSeconds(prev => prev + 1);
-      }, 1000);
+      const updateTimer = () => {
+        const baseSeconds = job.totalAccumulatedSeconds || 0;
+        
+        // データベースに刻印された開始時間をJavaScriptの日付オブジェクトに変換
+        if (job.lastStartedAt) {
+          const startedTime = job.lastStartedAt.toDate 
+            ? job.lastStartedAt.toDate().getTime() 
+            : new Date(job.lastStartedAt).getTime();
+          
+          const nowTime = new Date().getTime();
+          
+          // 通算ミリ秒の差分を引き算し、秒に変換
+          const elapsedSinceStart = Math.floor((nowTime - startedTime) / 1000);
+          
+          // 過去の合計 ＋ 今回のリアルタイム経過分
+          // もしもフリーズ後に時間がマイナスに計算されるのを防ぐため、最低でもbaseSecondsをキープする安全弁付き
+          setSeconds(Math.max(baseSeconds, baseSeconds + elapsedSinceStart));
+        } else {
+          setSeconds(baseSeconds);
+        }
+      };
+
+      // 画面を開いた瞬間にも一度同期を実行
+      updateTimer();
+
+      // 1秒に1回の高頻度で引き算結果をリフレッシュ
+      timerRef.current = setInterval(updateTimer, 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
+      setSeconds(job?.totalAccumulatedSeconds || 0);
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [job?.status]);
+  }, [job?.status, job?.lastStartedAt, job?.totalAccumulatedSeconds]);
 
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600);
@@ -103,19 +132,19 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       setModalTitle("⚠️ 案件受諾の確認");
       setModalMessage("この案件を引き受けますか？\n引き受けると、あなたの「進行中のタスク」リストに格納され、いつでも作業可能になります。");
     } else if (type === "start") {
-      setModalTitle("⏱️ 作業開始（タイマー始動）");
-      setModalMessage("これより実稼働の計測を開始します。\nSalesCrowd等の準備が整っていることを確認し、実行してください。");
+      setModalTitle("⏱️ 作業開始（打刻スタート）");
+      setModalMessage("これより実稼働の計測を開始します。\n開始日時が金庫に記録されるため、万が一PCがフリーズしても作業時間は守られます。");
     } else if (type === "pause") {
-      setModalTitle("⏸️ 一時停止（休憩・中断）");
-      setModalMessage("現在のタイマーをホールドし、一時停止状態へ移行します。\n翌日などにそのまま秒数を引き継じて再開可能です。");
+      setModalTitle("⏸️ 一時停止（打刻ホールド）");
+      setModalMessage("現在のタイマーをホールドし、一時停止状態へ移行します。\n開始した日時との差分が自動計算され、累計時間に蓄積されます。");
     } else if (type === "complete") {
-      setModalTitle("🏁 完了報告（検収依頼の送信）");
-      setModalMessage("作業を完全に終了し、オーナーへ検収を依頼します。\nタイマーがロックされ、この操作は取り消せなくなりますがよろしいですか？");
+      setModalTitle("🏁 完了報告（最終打刻と検収依頼）");
+      setModalMessage("作業を完全に終了し、オーナーへ検収を依頼します。\n最終作業時間が自動計算されてロックされ、この操作は取り消せなくなりますがよろしいですか？");
     }
     setModalOpen(true);
   };
 
-  // ポップアップ内で「はい、実行する」を押したときの確定ターミナル
+  // ポップアップ内で「はい、実行する」を押したときの確定処理
   const handleModalConfirm = async () => {
     setModalOpen(false);
     if (!modalActionType || !job) return;
@@ -123,6 +152,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     setSubmitting(true);
     try {
       const jobRef = doc(db, "jobs", job.id);
+      const now = new Date();
 
       if (modalActionType === "accept") {
         await updateDoc(jobRef, {
@@ -134,29 +164,57 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
         setJob({ id: snap.id, ...snap.data() });
       } 
       
+      // 💡【開始】始まった瞬間をサーバー時間（serverTimestamp）でガチッと固定
       else if (modalActionType === "start") {
         await updateDoc(jobRef, {
           status: "working",
+          lastStartedAt: serverTimestamp(), // ← いつ始まったかを記録
           updatedAt: serverTimestamp()
         });
         const snap = await getDoc(jobRef);
         setJob({ id: snap.id, ...snap.data() });
       } 
       
+      // 💡【一時停止】停止ボタンを押した瞬間と、過去の開始時間をミリ秒で正確に引き算
       else if (modalActionType === "pause") {
+        const baseSeconds = job.totalAccumulatedSeconds || 0;
+        let finalSeconds = baseSeconds;
+
+        if (job.lastStartedAt) {
+          const startedTime = job.lastStartedAt.toDate 
+            ? job.lastStartedAt.toDate().getTime() 
+            : new Date(job.lastStartedAt).getTime();
+          
+          const elapsed = Math.floor((now.getTime() - startedTime) / 1000);
+          finalSeconds = Math.max(baseSeconds, baseSeconds + elapsed);
+        }
+
         await updateDoc(jobRef, {
           status: "paused",
-          totalAccumulatedSeconds: seconds,
+          totalAccumulatedSeconds: finalSeconds, // 引き算した確定秒数を金庫へ上書き
           updatedAt: serverTimestamp()
         });
         const snap = await getDoc(jobRef);
         setJob({ id: snap.id, ...snap.data() });
       } 
       
+      // 💡【作業完了】一時停止の時と同じ計算を行い、最終秒数を確定させて検収へ
       else if (modalActionType === "complete") {
+        const baseSeconds = job.totalAccumulatedSeconds || 0;
+        let finalSeconds = baseSeconds;
+
+        if (job.lastStartedAt) {
+          const startedTime = job.lastStartedAt.toDate 
+            ? job.lastStartedAt.toDate().getTime() 
+            : new Date(job.lastStartedAt).getTime();
+          
+          const elapsed = Math.floor((now.getTime() - startedTime) / 1000);
+          finalSeconds = Math.max(baseSeconds, baseSeconds + elapsed);
+        }
+
         await updateDoc(jobRef, {
           status: "review",
-          totalAccumulatedSeconds: seconds,
+          totalAccumulatedSeconds: finalSeconds,
           submittedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -306,7 +364,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
               {(job.status === "working" || job.status === "paused") && (
                 <div className="p-4 bg-slate-950 text-white rounded text-center font-mono shadow-inner">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">ELAPSED TIME / 計測時間</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">ELAPSED TIME / 計測時間</span>
                   <p className="text-2xl font-black text-emerald-400 tracking-tight tabular-nums">{formatTime(seconds)}</p>
                 </div>
               )}
