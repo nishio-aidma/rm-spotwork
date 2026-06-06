@@ -42,6 +42,11 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   // 編集用のローカルステート
   const [editData, setEditData] = useState<any>({});
 
+  // 💡【新設】オーナーが手動修正するための「時・分・秒」専用の入力ステート
+  const [inputHours, setInputHours] = useState(0);
+  const [inputMinutes, setInputMinutes] = useState(0);
+  const [inputSeconds, setInputSeconds] = useState(0);
+
   useEffect(() => {
     async function fetchJob() {
       try {
@@ -50,10 +55,16 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           const data = snap.data();
           setJob(data);
           setEditData(data);
+
+          // 💡初期読み込み時に、現在の総秒数を「時・分・秒」に分解して入力欄の初期値にする
+          const totalSec = data.totalAccumulatedSeconds || 0;
+          setInputHours(Math.floor(totalSec / 3600));
+          setInputMinutes(Math.floor((totalSec % 3600) / 60));
+          setInputSeconds(totalSec % 60);
         }
       } catch (e) {
         console.error(e);
-      } finally { // 💡修正ポイント：private_finally を正しい finally に修正しました
+      } finally { 
         setLoading(false);
       }
     }
@@ -64,13 +75,19 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateDoc(doc(db, "jobs", id), {
+      // 💡【重要】オーナーが入力した「時・分・秒」を、裏側で「通算秒数」へ再計算・合算します
+      const calculatedTotalSeconds = (inputHours * 3600) + (inputMinutes * 60) + inputSeconds;
+
+      const finalData = {
         ...editData,
+        totalAccumulatedSeconds: calculatedTotalSeconds, // 修正された秒数を格納
         updatedAt: serverTimestamp()
-      });
-      setJob(editData);
+      };
+
+      await updateDoc(doc(db, "jobs", id), finalData);
+      setJob(finalData);
       setIsEditing(false);
-      alert("案件情報を更新しました");
+      alert("案件情報および作業時間を更新しました");
     } catch (e) {
       alert("更新に失敗しました");
     } finally {
@@ -159,13 +176,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
   return (
     <OwnerShell title="案件詳細・管理" subTitle={isEditing ? "発注情報の修正編集" : "掲載内容および検収の確認"}>
-      {/* 画面構造を「左：発注情報（8カラム）」「右：検収・操作パネル（4カラム）」の黄金2分割へ */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 max-w-full mx-auto pb-32 text-slate-900 font-sans antialiased">
         
         {/* 【左側メインエリア：8カラム分】 */}
         <div className="lg:col-span-8 space-y-4">
           
-          {/* 上部ナビバー：太線セパレート */}
+          {/* 上部ナビバー */}
           <div className="flex justify-between items-center bg-white border-2 border-slate-300 p-4 rounded shadow-sm">
             <button type="button" onClick={() => router.push("/owner/jobs")} className="text-[11px] font-black text-[#0082C8] hover:underline flex items-center gap-1">
               ← 案件管理一覧に戻る
@@ -177,7 +193,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           </div>
 
-          {/* タイトルコンテナ（通常時 / 編集時） */}
+          {/* タイトルコンテナ */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 shadow-sm">
             {isEditing ? (
               <div className="space-y-1">
@@ -197,7 +213,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-4 shadow-sm">
             {job.jobType === 'form_posting' ? (
               <>
-                {/* フォーム投稿：送信文面内容 */}
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">送信文面内容（スプレッドシート等URL）</label>
                   {isEditing ? (
@@ -216,7 +231,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   )}
                 </div>
 
-                {/* フォーム投稿：入力情報 */}
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力情報（リスト等URL）</label>
                   {isEditing ? (
@@ -237,7 +251,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               </>
             ) : (
               <>
-                {/* リスト作成：抽出サイトURL */}
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">抽出サイトURL</label>
                   {isEditing ? (
@@ -256,7 +269,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   )}
                 </div>
 
-                {/* リスト作成：入力項目 */}
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力項目（指示書等URL）</label>
                   {isEditing ? (
@@ -403,9 +415,50 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-0.5">ASSIGNED WORKER / 担当者ID</span>
                     <p className="text-xs font-bold text-slate-200 truncate">{job.workerId || "未割当"}</p>
                   </div>
+                  
                   <div className="border-t border-slate-800 pt-2">
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-0.5">ACCUMULATED TIME / 累積稼働</span>
-                    <p className="text-xl font-black text-emerald-400 tracking-tight tabular-nums">{formatTime(job.totalAccumulatedSeconds || 0)}</p>
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-1">ACCUMULATED TIME / 累積稼働</span>
+                    
+                    {/* 💡【新設】isEditing（修正モード）のときは、時・分・秒を手動入力できるスマートスロットに変身！ */}
+                    {isEditing ? (
+                      <div className="flex items-center gap-1.5 text-slate-900 font-sans pt-1">
+                        <div className="flex items-center gap-0.5">
+                          <input 
+                            type="number" 
+                            min="0"
+                            className="w-12 p-1 text-center bg-white border border-slate-400 rounded text-xs font-black font-mono" 
+                            value={inputHours} 
+                            onChange={e => setInputHours(Math.max(0, Number(e.target.value)))}
+                          />
+                          <span className="text-[10px] font-black text-slate-400">h</span>
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                          <input 
+                            type="number" 
+                            min="0"
+                            max="59"
+                            className="w-12 p-1 text-center bg-white border border-slate-400 rounded text-xs font-black font-mono" 
+                            value={inputMinutes} 
+                            onChange={e => setInputMinutes(Math.min(59, Math.max(0, Number(e.target.value))))}
+                          />
+                          <span className="text-[10px] font-black text-slate-400">m</span>
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                          <input 
+                            type="number" 
+                            min="0"
+                            max="59"
+                            className="w-12 p-1 text-center bg-white border border-slate-400 rounded text-xs font-black font-mono" 
+                            value={inputSeconds} 
+                            onChange={e => setInputSeconds(Math.min(59, Math.max(0, Number(e.target.value))))}
+                          />
+                          <span className="text-[10px] font-black text-slate-400">s</span>
+                        </div>
+                      </div>
+                    ) : (
+                      /* 通常モード時はこれまで通りフォーマットされた美しい合計時間を表示 */
+                      <p className="text-xl font-black text-emerald-400 tracking-tight tabular-nums">{formatTime(job.totalAccumulatedSeconds || 0)}</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -415,16 +468,24 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 {isEditing ? (
                   <>
                     <button 
-                      type="button"
+                      type="button" 
                       onClick={handleSave} 
                       disabled={saving} 
                       className="w-full py-3 bg-slate-900 text-white text-xs font-black rounded border border-black/10 hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-50"
                     >
-                      {saving ? "データ保存中..." : "💾 修正内容を確定・保存"}
+                      {saving ? "データ保存中..." : "💾 修正内容と時間を確定・保存"}
                     </button>
                     <button 
                       type="button"
-                      onClick={() => { setIsEditing(false); setEditData(job); }} 
+                      onClick={() => { 
+                        setIsEditing(false); 
+                        setEditData(job); 
+                        // キャンセル時は元の時間に戻す
+                        const totalSec = job.totalAccumulatedSeconds || 0;
+                        setInputHours(Math.floor(totalSec / 3600));
+                        setInputMinutes(Math.floor((totalSec % 3600) / 60));
+                        setInputSeconds(totalSec % 60);
+                      }} 
                       className="w-full py-2 bg-white border-2 border-slate-300 text-slate-600 text-xs font-black rounded hover:bg-slate-50 transition-colors"
                     >
                       編集をキャンセル
@@ -484,27 +545,22 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
       </div>
 
-      {/* =========================================================================
-          💡【修正配備】オーナー用 POSレジ風ソリッドデザイン・カスタム確認ポップアップ（モーダル）
-          ========================================================================= */}
+      {/* オーナー用 ポップアップ（モーダル） */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 font-sans antialiased">
           <div className="bg-white border-4 border-slate-950 w-full max-w-sm rounded shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] overflow-hidden text-slate-900">
             
-            {/* ポップアップヘッダー */}
             <div className="bg-slate-950 text-white p-3 font-black text-xs flex justify-between items-center tracking-wider select-none">
               <span>{modalTitle}</span>
               <span className="text-[9px] font-mono font-bold text-slate-400">OWNER CONSOLE</span>
             </div>
 
-            {/* ポップアップ本文 */}
             <div className="p-5 border-b-2 border-slate-200 bg-slate-50">
               <p className="text-xs font-bold text-slate-700 leading-relaxed whitespace-pre-wrap">
                 {modalMessage}
               </p>
             </div>
 
-            {/* アクションボタン */}
             <div className="grid grid-cols-2 divide-x-4 divide-slate-950 border-t-2 border-slate-950 bg-white">
               <button
                 type="button"
@@ -526,6 +582,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         </div>
       )}
 
-    </OwnerShell> // 💡修正ポイント：末尾の噛み合わせバグを完全に直しました
+    </OwnerShell>
   );
 }
