@@ -21,42 +21,72 @@ export default function OwnerExportPage() {
       const start = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
       const end = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0, 23, 59, 59);
 
-      const [logSnap, jobSnap, userSnap] = await Promise.all([
-        getDocs(query(collection(db, "workLogs"), where("timestamp", ">=", Timestamp.fromDate(start)), where("timestamp", "<=", Timestamp.fromDate(end)))),
+      // 💡 jobs（案件）と users（ワーカー）の最新データをFirebaseからダイレクトに全取得
+      const [jobSnap, userSnap] = await Promise.all([
         getDocs(collection(db, "jobs")),
         getDocs(query(collection(db, "users"), where("role", "==", "worker")))
       ]);
 
-      const userMap = Object.fromEntries(userSnap.docs.map(d => [d.id, `${d.data().lastName || ""} ${d.data().firstName || ""}`.trim() || d.data().name || "不明"]));
+      // ワーカーIDから名前をパッと引ける辞書を作成
+      const userMap = Object.fromEntries(userSnap.docs.map(d => [
+        d.id, 
+        `${d.data().lastName || ""} ${d.data().firstName || ""}`.trim() || d.data().name || "不明"
+      ]));
 
       const workerAgg: any = {};
-      logSnap.docs.forEach(d => {
-        const log = d.data();
-        const wId = log.workerId;
-        if (!workerAgg[wId]) {
-          workerAgg[wId] = { name: userMap[wId], activeDays: new Set(), jobIds: new Set(), completedCount: 0, totalSeconds: 0 };
-        }
-        workerAgg[wId].totalSeconds += (log.seconds || 0);
-        workerAgg[wId].jobIds.add(log.jobId);
-        if (log.timestamp) workerAgg[wId].activeDays.add(log.timestamp.toDate().toDateString());
-      });
 
+      // 💡【ロジック大リフォーム】jobsの累積秒数（totalAccumulatedSeconds）からリアルタイムに時間を集計します
       jobSnap.docs.forEach(d => {
         const job = d.data();
-        if (job.status === 'completed' && job.completedAt && job.workerId) {
-          const cDate = job.completedAt.toDate();
-          if (cDate.getFullYear() === viewDate.getFullYear() && cDate.getMonth() === viewDate.getMonth()) {
-            if (workerAgg[job.workerId]) workerAgg[job.workerId].completedCount++;
+        const wId = job.workerId;
+
+        // 下書きや募集前のデータ、またはまだ担当ワーカーが決まっていないデータはスキップ
+        if (!wId || job.status === "open" || job.status === "draft") return;
+
+        // 案件の最終更新日（updatedAt）または作成日を基準に、オーナーが選択した「対象月」のデータだけに絞り込む
+        const jobTimestamp = job.updatedAt || job.createdAt;
+        if (jobTimestamp) {
+          const jDate = jobTimestamp.toDate();
+          const isCurrentMonth = jDate.getFullYear() === viewDate.getFullYear() && jDate.getMonth() === viewDate.getMonth();
+          
+          if (isCurrentMonth) {
+            // まだ集計ボックスにこのワーカーの枠がなければ、初期枠をきれいに作成
+            if (!workerAgg[wId]) {
+              workerAgg[wId] = { 
+                name: userMap[wId] || "不明のワーカー", 
+                activeDays: new Set(), 
+                acceptedCount: 0, 
+                completedCount: 0, 
+                totalSeconds: 0 
+              };
+            }
+
+            const w = workerAgg[wId];
+
+            // 1. 稼働秒数をステータス関係なくリアルタイムに1秒残さず合算！
+            w.totalSeconds += (job.totalAccumulatedSeconds || 0);
+
+            // 2. 案件請負数をカウント
+            w.acceptedCount++;
+
+            // 3. 完了済みのステータスであれば、案件完了数をカウント
+            if (job.status === "completed") {
+              w.completedCount++;
+            }
+
+            // 4. 稼働日数の代わりに、その月にデータが動いた日をカウント（Setで重複を自動排除）
+            w.activeDays.add(jDate.toDateString());
           }
         }
       });
 
+      // 画面に表示・CSVに渡すためにデータを整形（秒をh単位の小数へ変換）
       setSummaryData(Object.values(workerAgg).map((w: any) => ({
         ...w,
-        activeDays: w.activeDays.size,
-        acceptedCount: w.jobIds.size,
-        duration: (w.totalSeconds / 3600).toFixed(2)
+        activeDays: w.activeDays.size === 0 ? 1 : w.activeDays.size, // 最低1日稼働として救済
+        duration: (w.totalSeconds / 3600).toFixed(2) // 3600秒で割って「1.50h」のような形にする
       })));
+
     } catch (e) { 
       console.error("Data fetch error", e); 
     } finally { 
@@ -78,7 +108,7 @@ export default function OwnerExportPage() {
     console.log("CSV生成開始...");
 
     try {
-      const headers = ["ワーカー名", "稼働日数", "案件請負数", "案件完了数", "稼働時間(h)"];
+      const headers = ["ワーカー名", "活動日数", "案件請負数", "案件完了数", "稼働時間(h)"];
       
       const rows = summaryData.map(data => [
         `"${data.name}"`,
@@ -119,7 +149,7 @@ export default function OwnerExportPage() {
     <OwnerShell title="データ出力" subTitle="月次実績の確認とCSV出力">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 1. 操作パネル：丸みと古い紫色を廃止し、太枠線＋クリーンブルーのフラットボタンへ */}
+        {/* 1. 操作パネル */}
         <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <span className="text-xs font-black text-slate-500 whitespace-nowrap">対象月選択:</span>
@@ -140,7 +170,7 @@ export default function OwnerExportPage() {
           </button>
         </div>
 
-        {/* 2. 実績プレビューテーブル：他の一覧表と完全にルールを統一 */}
+        {/* 2. 実績プレビューテーブル */}
         <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
           <div className="px-4 py-3 border-b-2 border-slate-300 bg-slate-100 flex justify-between items-center">
             <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider">実績プレビュー</h3>
@@ -150,10 +180,9 @@ export default function OwnerExportPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse table-auto">
               <thead>
-                {/* ヘッダー：グレーのベタ塗りとパキッとした文字サイズ */}
                 <tr className="bg-slate-50 border-b border-slate-300 text-[11px] text-slate-500 font-black">
                   <th className="p-3 border-r border-slate-200">ワーカー名</th>
-                  <th className="p-3 border-r border-slate-200 text-right w-28">稼働日数</th>
+                  <th className="p-3 border-r border-slate-200 text-right w-28">活動日数</th>
                   <th className="p-3 border-r border-slate-200 text-right w-28">案件請負数</th>
                   <th className="p-3 border-r border-slate-200 text-right w-28">案件完了数</th>
                   <th className="p-3 text-right w-32">総稼働時間</th>
