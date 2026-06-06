@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, getDocs, where, Timestamp } from "firebase/firestore";
+import { collection, query, getDocs, where, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import OwnerShell from "@/components/OwnerShell";
@@ -19,72 +19,74 @@ export default function OwnerExportPage() {
     setLoadingData(true);
     try {
       const start = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
-      const end = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0, 23, 59, 59);
+      const currentMonthStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`; // 例: "2026-06"
 
-      // 💡 jobs（案件）と users（ワーカー）の最新データをFirebaseからダイレクトに全取得
-      const [jobSnap, userSnap] = await Promise.all([
+      // 💡 jobs（案件）、users（ワーカー）、そしてワーカーの月次確定ステータス（workerMonthlyStatus）を全取得
+      const [jobSnap, userSnap, statusSnap] = await Promise.all([
         getDocs(collection(db, "jobs")),
-        getDocs(query(collection(db, "users"), where("role", "==", "worker")))
+        getDocs(query(collection(db, "users"), where("role", "==", "worker"))),
+        getDocs(collection(db, "workerMonthlyStatus"))
       ]);
 
-      // ワーカーIDから名前をパッと引ける辞書を作成
+      // ワーカーIDから名前を引ける辞書
       const userMap = Object.fromEntries(userSnap.docs.map(d => [
         d.id, 
         `${d.data().lastName || ""} ${d.data().firstName || ""}`.trim() || d.data().name || "不明"
       ]));
 
+      // 💡【新設】ワーカーごとの確認済みステータスを引ける辞書を作成
+      const statusMap: { [key: string]: string } = {};
+      statusSnap.docs.forEach(d => {
+        const sData = d.data();
+        // 対象月が一致するフラグを格納 (例: statusMap["workerUid"] = "confirmed")
+        if (sData.yearMonth === currentMonthStr && sData.workerId) {
+          statusMap[sData.workerId] = sData.status || "none";
+        }
+      });
+
       const workerAgg: any = {};
 
-      // 💡【ロジック大リフォーム】jobsの累積秒数（totalAccumulatedSeconds）からリアルタイムに時間を集計します
       jobSnap.docs.forEach(d => {
         const job = d.data();
         const wId = job.workerId;
 
-        // 下書きや募集前のデータ、またはまだ担当ワーカーが決まっていないデータはスキップ
         if (!wId || job.status === "open" || job.status === "draft") return;
 
-        // 案件の最終更新日（updatedAt）または作成日を基準に、オーナーが選択した「対象月」のデータだけに絞り込む
         const jobTimestamp = job.updatedAt || job.createdAt;
         if (jobTimestamp) {
           const jDate = jobTimestamp.toDate();
           const isCurrentMonth = jDate.getFullYear() === viewDate.getFullYear() && jDate.getMonth() === viewDate.getMonth();
           
           if (isCurrentMonth) {
-            // まだ集計ボックスにこのワーカーの枠がなければ、初期枠をきれいに作成
             if (!workerAgg[wId]) {
               workerAgg[wId] = { 
                 name: userMap[wId] || "不明のワーカー", 
                 activeDays: new Set(), 
                 acceptedCount: 0, 
                 completedCount: 0, 
-                totalSeconds: 0 
+                totalSeconds: 0,
+                // 💡辞書からこのワーカーの提出ステータスを割り当てる（なければ未提出）
+                submissionStatus: statusMap[wId] || "none" 
               };
             }
 
             const w = workerAgg[wId];
-
-            // 1. 稼働秒数をステータス関係なくリアルタイムに1秒残さず合算！
             w.totalSeconds += (job.totalAccumulatedSeconds || 0);
-
-            // 2. 案件請負数をカウント
             w.acceptedCount++;
 
-            // 3. 完了済みのステータスであれば、案件完了数をカウント
             if (job.status === "completed") {
               w.completedCount++;
             }
 
-            // 4. 稼働日数の代わりに、その月にデータが動いた日をカウント（Setで重複を自動排除）
             w.activeDays.add(jDate.toDateString());
           }
         }
       });
 
-      // 画面に表示・CSVに渡すためにデータを整形（秒をh単位の小数へ変換）
       setSummaryData(Object.values(workerAgg).map((w: any) => ({
         ...w,
-        activeDays: w.activeDays.size === 0 ? 1 : w.activeDays.size, // 最低1日稼働として救済
-        duration: (w.totalSeconds / 3600).toFixed(2) // 3600秒で割って「1.50h」のような形にする
+        activeDays: w.activeDays.size === 0 ? 1 : w.activeDays.size,
+        duration: (w.totalSeconds / 3600).toFixed(2)
       })));
 
     } catch (e) { 
@@ -105,21 +107,21 @@ export default function OwnerExportPage() {
       return;
     }
     setExporting(true);
-    console.log("CSV生成開始...");
 
     try {
-      const headers = ["ワーカー名", "活動日数", "案件請負数", "案件完了数", "稼働時間(h)"];
+      // CSVヘッダーにもステータスを追加
+      const headers = ["ワーカー名", "活動日数", "案件請負数", "案件完了数", "稼働時間(h)", "提出ステータス"];
       
       const rows = summaryData.map(data => [
         `"${data.name}"`,
         data.activeDays,
         data.acceptedCount,
         data.completedCount,
-        data.duration
+        data.duration,
+        data.submissionStatus === "confirmed" ? '"確認済み"' : '"未提出"'
       ].join(","));
 
       const csvContent = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
-      
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = window.URL.createObjectURL(blob);
       
@@ -135,12 +137,11 @@ export default function OwnerExportPage() {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
         setExporting(false);
-        console.log("ダウンロード完了");
       }, 100);
 
     } catch (e) {
       console.error("Download Error:", e);
-      alert("エラーが発生しました。コンソールを確認してください。");
+      alert("エラーが発生しました。");
       setExporting(false);
     }
   };
@@ -182,10 +183,12 @@ export default function OwnerExportPage() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-300 text-[11px] text-slate-500 font-black">
                   <th className="p-3 border-r border-slate-200">ワーカー名</th>
-                  <th className="p-3 border-r border-slate-200 text-right w-28">活動日数</th>
-                  <th className="p-3 border-r border-slate-200 text-right w-28">案件請負数</th>
-                  <th className="p-3 border-r border-slate-200 text-right w-28">案件完了数</th>
-                  <th className="p-3 text-right w-32">総稼働時間</th>
+                  <th className="p-3 border-r border-slate-200 text-right w-24">活動日数</th>
+                  <th className="p-3 border-r border-slate-200 text-right w-24">案件請負数</th>
+                  <th className="p-3 border-r border-slate-200 text-right w-24">案件完了数</th>
+                  <th className="p-3 border-r border-slate-200 text-right w-28">総稼働時間</th>
+                  {/* 💡【新設】一番右端に提出ステータス列を配備 */}
+                  <th className="p-3 text-center w-36">提出ステータス</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-800">
@@ -195,12 +198,24 @@ export default function OwnerExportPage() {
                     <td className="p-3 border-r border-slate-200 text-right font-mono text-slate-600">{row.activeDays} 日</td>
                     <td className="p-3 border-r border-slate-200 text-right font-mono text-slate-600">{row.acceptedCount} 件</td>
                     <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-emerald-600">{row.completedCount} 件</td>
-                    <td className="p-3 text-right font-mono font-black text-[#0082C8] bg-slate-50/50">{row.duration} h</td>
+                    <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-[#0082C8] bg-slate-50/50">{row.duration} h</td>
+                    {/* 💡ワーカーの提出状況に応じて、見やすいモダンなフラットバッジをリアルタイム表示 */}
+                    <td className="p-3 text-center">
+                      {row.submissionStatus === "confirmed" ? (
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-300 text-[10px] font-black px-2 py-0.5 rounded shadow-inner">
+                          ✓ 確認済み
+                        </span>
+                      ) : (
+                        <span className="bg-slate-50 text-slate-400 border border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                          ⏳ 未提出
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {!loadingData && summaryData.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="p-16 text-center text-slate-400 italic text-xs font-medium bg-slate-50">
+                    <td colSpan={6} className="p-16 text-center text-slate-400 italic text-xs font-medium bg-slate-50">
                       選択された月の稼働データはありません
                     </td>
                   </tr>

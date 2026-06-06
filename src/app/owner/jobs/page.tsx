@@ -8,13 +8,17 @@ import OwnerShell from "@/components/OwnerShell";
 import Link from "next/link";
 
 export default function OwnerJobsPage() {
-  const [allJobs, setAllJobs] = useState<any[]>([]); // 全生データ
-  const [filteredJobs, setFilteredJobs] = useState<any[]>([]); // 絞り込み後データ
+  const [allJobs, setAllJobs] = useState<any[]>([]); 
+  const [filteredJobs, setFilteredJobs] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
   // 絞り込みフィルターの選択状態
   const [filterJobType, setFilterJobType] = useState<string>("all");
   const [filterUrgency, setFilterUrgency] = useState<string>("all");
+
+  // 💡【新設】カスタムモーダルポップアップ用の状態管理
+  const [modalOpen, setModalOpen] = useState(false);
+  const [targetJob, setTargetJob] = useState<{ id: string; title: string } | null>(null);
 
   // 自分が発注した案件を一括取得
   const fetchOwnerJobs = async (userId: string) => {
@@ -34,7 +38,6 @@ export default function OwnerJobsPage() {
           return deadlineA.localeCompare(deadlineB);
         }
         
-        // 💡TypeScriptのエラー対策: a["createdAt"] のように記述することで、型エラーを完全に回避します
         const timeA = a["createdAt"]?.toDate ? a["createdAt"].toDate().getTime() : 0;
         const timeB = b["createdAt"]?.toDate ? b["createdAt"].toDate().getTime() : 0;
         return timeB - timeA;
@@ -75,18 +78,26 @@ export default function OwnerJobsPage() {
     setFilteredJobs(result);
   }, [filterJobType, filterUrgency, allJobs]);
 
-  // 完全削除ロジック
-  const handleDeleteJob = async (jobId: string, title: string) => {
-    const ok = window.confirm(`【警告】この案件を完全に削除しますか？\n\n対象：${title}\n※この操作は取り消せません。`);
-    if (!ok) return;
+  // モーダルを起動する窓口
+  const triggerDeleteModal = (jobId: string, title: string) => {
+    setTargetJob({ id: jobId, title });
+    setModalOpen(true);
+  };
+
+  // 💡【確定処理】カスタムモーダル内から実行される完全削除ロジック
+  const handleConfirmDelete = async () => {
+    if (!targetJob) return;
+    setModalOpen(false);
 
     try {
-      await deleteDoc(doc(db, "jobs", jobId));
-      setAllJobs(prev => prev.filter(job => job.id !== jobId));
+      await deleteDoc(doc(db, "jobs", targetJob.id));
+      setAllJobs(prev => prev.filter(job => job.id !== targetJob.id));
       alert("案件を完全に削除しました。");
     } catch (e) {
       console.error(e);
       alert("削除処理に失敗しました。");
+    } finally {
+      setTargetJob(null);
     }
   };
 
@@ -251,8 +262,9 @@ export default function OwnerJobsPage() {
                         <Link href={`/owner/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">
                           詳細 →
                         </Link>
+                        {/* 💡window.confirmではなくカスタムモーダルを起動するように変更 */}
                         <button
-                          onClick={() => handleDeleteJob(job.id, job.title)}
+                          onClick={() => triggerDeleteModal(job.id, job.title)}
                           className="text-slate-300 hover:text-rose-600 transition-colors p-1"
                           title="この案件をデータベースから完全削除"
                         >
@@ -275,6 +287,52 @@ export default function OwnerJobsPage() {
         </div>
 
       </div>
+
+      {/* 💡【超シンプル化リフォーム】オーナー側の案件削除確認ポップアップも、フチ取り線を削ぎ落とした極上シンプルモダンデザインへ完全統一！ */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            
+            {/* ポップアップヘッダー：クリーンブルーのモダン細帯 */}
+            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
+              <span>⚠️ 案件の完全削除確認</span>
+            </div>
+
+            {/* ポップアップ本文：純白でシャープな見やすさ */}
+            <div className="p-6 bg-white space-y-3">
+              <p className="text-xs font-bold text-rose-600 leading-relaxed">
+                【警告】この案件をデータベースから完全に消去しますか？
+              </p>
+              <div className="bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold text-slate-700 truncate">
+                対象：{targetJob?.title}
+              </div>
+              <p className="text-[11px] font-medium text-slate-400">
+                ※この操作を実行すると、ワーカー側のタスク一覧からも完全に消滅し、二度と復元できません。
+              </p>
+            </div>
+
+            {/* アクションボタン：グレー＆ブルーの洗練されたフラット配置 */}
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+              >
+                完全に削除する
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </OwnerShell>
   );
 }
