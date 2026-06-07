@@ -10,7 +10,6 @@ import Link from "next/link";
 export default function OwnerDashboard() {
   const { user, loading: authLoading } = useRequireAuth("owner");
   
-  // 💡 拡張版スタッツ：下書きや期日直前データもキャッチして余白を埋めます
   const [stats, setStats] = useState({ 
     totalJobs: 0, 
     activeJobs: 0, 
@@ -18,7 +17,8 @@ export default function OwnerDashboard() {
     totalSeconds: 0,
     draftJobs: 0,
     openJobs: 0,
-    nearDeadlineJobs: 0
+    nearDeadlineJobs: 0,
+    overdueJobs: 0 
   });
   
   const [workerStats, setWorkerStats] = useState<any[]>([]);
@@ -39,7 +39,6 @@ export default function OwnerDashboard() {
     return `${h > 0 ? h + 'h' : ''}${m}m${sec}s`;
   };
 
-  // 期日チェック関数
   const checkNearDeadline = (deadlineStr: string) => {
     if (!deadlineStr) return false;
     try {
@@ -55,11 +54,25 @@ export default function OwnerDashboard() {
     }
   };
 
+  const checkIsOverdue = (deadlineStr: string) => {
+    if (!deadlineStr) return false;
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const dDate = new Date(deadlineStr);
+      if (isNaN(dDate.getTime())) return false;
+      return dDate < today; 
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
     async function fetchData() {
       if (!user) return;
       setLoading(true);
       try {
+        // 💡【カイゼン】下段大容量化に伴い、workLogsの新着取得件数を最大10件へ拡張
         const [jSnap, uSnap, lSnap] = await Promise.all([
           getDocs(query(collection(db, "jobs"), orderBy("createdAt", "desc"))),
           getDocs(query(collection(db, "users"), where("role", "==", "worker"))),
@@ -74,7 +87,7 @@ export default function OwnerDashboard() {
           userMap[d.id] = `${u.lastName || ""} ${u.firstName || ""}`.trim() || u.name || "不明";
         });
 
-        let totalSec = 0, active = 0, review = 0, draft = 0, open = 0, nearDeadline = 0;
+        let totalSec = 0, active = 0, review = 0, draft = 0, open = 0, nearDeadline = 0, overdue = 0;
         const workerAgg: any = {};
         const alertList: any[] = [];
 
@@ -88,17 +101,22 @@ export default function OwnerDashboard() {
             totalSec += (j.totalAccumulatedSeconds || 0);
           }
 
-          // 期日が1週間以内の案件をカウント
-          if (j.status !== "completed" && checkNearDeadline(j.deadline)) {
-            nearDeadline++;
+          if (j.status !== "completed") {
+            if (checkNearDeadline(j.deadline)) {
+              nearDeadline++;
+            }
+            if (checkIsOverdue(j.deadline)) {
+              overdue++; 
+            }
           }
 
-          if (j.status === "review" || j.urgency === "3") {
+          if (j.status === "review" || j.urgency === "3" || (j.status !== "completed" && checkIsOverdue(j.deadline))) {
             alertList.push({
               id: j.id,
               title: j.title || "無題の案件",
               status: j.status,
               urgency: j.urgency,
+              isOverdue: j.status !== "completed" && checkIsOverdue(j.deadline),
               workerName: userMap[j.workerId] || "未定"
             });
           }
@@ -121,7 +139,8 @@ export default function OwnerDashboard() {
           }
         });
 
-        const formattedLogs = lSnap.docs.slice(0, 5).map(d => {
+        // 💡打刻ログを最大10件流せるように slice(0, 10) へ増量
+        const formattedLogs = lSnap.docs.slice(0, 10).map(d => {
           const logData = d.data();
           const logDate = logData.timestamp?.toDate() ? logData.timestamp.toDate() : new Date();
           return {
@@ -140,11 +159,12 @@ export default function OwnerDashboard() {
           totalSeconds: totalSec,
           draftJobs: draft,
           openJobs: open,
-          nearDeadlineJobs: nearDeadline
+          nearDeadlineJobs: nearDeadline,
+          overdueJobs: overdue
         });
         setWorkerStats(Object.values(workerAgg).sort((a: any, b: any) => b.total - a.total));
         setRecentLogs(formattedLogs);
-        setAlertJobs(alertList.slice(0, 5)); 
+        setAlertJobs(alertList.slice(0, 10)); // 💡アラートデスクも最大10件まで抜粋表示できるように増量
 
       } catch (e) { 
         console.error(e); 
@@ -158,84 +178,91 @@ export default function OwnerDashboard() {
   if (authLoading || loading) return <OwnerShell title="集計中..."><div className="p-10 text-slate-400 text-center text-xs font-bold">リアルタイムデータを取得中...</div></OwnerShell>;
 
   return (
-    <OwnerShell title="メインメニュー" subTitle="稼働状況一覧 ＆ 総合コントロールコンソール">
+    <OwnerShell title="オーナーダッシュボード" subTitle="稼働状況一覧 ＆ 総合コントロールコンソール">
       <div className="space-y-4 max-w-full mx-auto text-slate-900 font-sans antialiased">
         
         {/* 【最上段】コントロールバー */}
         <div className="bg-white border-2 border-slate-300 rounded p-3 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="text-xs font-black text-slate-700 flex items-center gap-1.5 pl-1 select-none">
-            <span className="inline-block w-2 h-2 bg-[#0082C8] rounded-full animate-pulse"></span>
+          <div className="text-sm font-black text-slate-700 flex items-center gap-1.5 pl-1 select-none">
+            <span className="inline-block w-2.5 h-2.5 bg-[#0082C8] rounded-full animate-pulse"></span>
             システムクイック操作パネル
           </div>
           <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full md:w-auto">
-            <Link href="/owner/jobs/new" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-[11px] font-black px-3 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
+            <Link href="/owner/jobs/new" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
               📝 新規案件登録
             </Link>
-            <Link href="/owner/jobs" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-[11px] font-black px-3 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
+            <Link href="/owner/jobs" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
               🗂️ 案件・検収管理
             </Link>
-            <Link href="/owner/exports" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-[11px] font-black px-3 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
+            <Link href="/owner/exports" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
               📊 月次データ出力
             </Link>
-            <Link href="/owner/settings" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-[11px] font-black px-3 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
+            <Link href="/owner/settings" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
               ⚙️ 全体ルール設定
             </Link>
           </div>
         </div>
 
-        {/* 【中段エリア】左右2分割（等幅・高さ230pxで完全固定） */}
+        {/* 【中段エリア】左右2分割（高さ290pxのゆったり配置） */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           
-          {/* 💡【余白撲滅リフォーム】左側：システム稼働状況サマリー（高密度インテリジェンス仕様） */}
-          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[230px]">
-            <div className="bg-slate-50 px-3 py-2 border-b border-slate-300 font-black text-xs text-slate-700 flex justify-between items-center select-none">
+          {/* 左側：システム稼働状況サマリー */}
+          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[290px]">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-300 font-black text-sm text-slate-800 flex justify-between items-center select-none">
               <span>📊 システム稼働状況サマリー</span>
-              <span className="text-[9px] font-mono text-slate-400 font-bold uppercase">System Stats</span>
+              <span className="text-[10px] font-mono text-slate-400 font-bold uppercase">System Stats</span>
             </div>
             
-            <div className="p-3 flex flex-col justify-between flex-1 bg-white divide-y divide-slate-100">
-              {/* 上段：3連メトリクス数値をコンパクトに配置 */}
-              <div className="grid grid-cols-3 gap-2 pb-3">
-                <div className={`p-2 bg-white border border-slate-200 rounded flex flex-col justify-between ${stats.reviewJobs > 0 ? 'bg-amber-50/10 border-amber-300' : ''}`}>
-                  <span className="text-[9px] font-black text-slate-400 block uppercase">要検収</span>
-                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">{stats.reviewJobs}<span className="text-[10px] font-bold text-slate-400 ml-0.5">件</span></div>
+            <div className="p-4.5 flex flex-col justify-between flex-1 bg-white divide-y-2 divide-slate-100">
+              {/* 上段：3連メトリクス数値 */}
+              <div className="grid grid-cols-3 gap-3 pb-4">
+                <div className={`p-3 bg-white border border-slate-200 rounded flex flex-col justify-between shadow-sm ${stats.reviewJobs > 0 ? 'bg-amber-50/10 border-amber-300' : ''}`}>
+                  <span className="text-[10px] font-black text-slate-400 block uppercase tracking-wider">要検収</span>
+                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">{stats.reviewJobs}<span className="text-xs font-bold text-slate-400 ml-0.5">件</span></div>
                 </div>
-                <div className="p-2 bg-white border border-slate-200 rounded flex flex-col justify-between">
-                  <span className="text-[9px] font-black text-slate-400 block uppercase">進行中</span>
-                  <div className="text-xl font-black text-slate-900 font-mono tracking-tight">{stats.activeJobs}<span className="text-[10px] font-bold text-slate-400 ml-0.5">件</span></div>
+                <div className="p-3 bg-white border border-slate-200 rounded flex flex-col justify-between shadow-sm">
+                  <span className="text-[10px] font-black text-slate-400 block uppercase tracking-wider">進行中</span>
+                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">{stats.activeJobs}<span className="text-xs font-bold text-slate-400 ml-0.5">件</span></div>
                 </div>
-                <div className="p-2 bg-white border border-slate-200 rounded flex flex-col justify-between bg-slate-50/30">
-                  <span className="text-[9px] font-black text-slate-400 block uppercase">総稼働（累計）</span>
-                  <div className="text-xl font-black text-[#0082C8] font-mono tracking-tight truncate">{formatTime(stats.totalSeconds)}</div>
+                <div className="p-3 bg-white border border-slate-200 rounded flex flex-col justify-between bg-slate-50/40 shadow-sm">
+                  <span className="text-[10px] font-black text-slate-400 block uppercase tracking-wider">総稼働（累計）</span>
+                  <div className="text-2xl font-black text-[#0082C8] font-mono tracking-tight truncate">{formatTime(stats.totalSeconds)}</div>
                 </div>
               </div>
 
-              {/* 💡【新設】下段：空いていた無駄スペースに全案件の内訳 ＆ アラート分析情報をギッシリ配置！ */}
-              <div className="pt-3 grid grid-cols-2 gap-4 text-xs">
-                {/* 内部ステータス内訳 */}
-                <div className="space-y-1.5 justify-center flex flex-col">
-                  <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                    <span>登録総数</span>
-                    <span className="text-slate-700 font-mono font-bold">{stats.totalJobs} 件</span>
+              {/* 下段：全案件内訳 ＆ 期日アラート */}
+              <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 items-center">
+                <div className="space-y-2.5 flex flex-col justify-center">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[14px] font-black text-slate-800">📋 登録総数</span>
+                    <span className="text-base font-black text-slate-900 font-mono bg-slate-100 border border-slate-300 px-2.5 py-0.5 rounded shadow-sm">{stats.totalJobs} <span className="text-[10px] font-bold text-slate-400">件</span></span>
                   </div>
-                  <div className="grid grid-cols-2 gap-1 font-mono text-[11px] font-bold">
-                    <div className="bg-slate-50 border border-slate-200 rounded p-1 text-center">
-                      <span className="text-slate-400 font-sans font-black text-[9px] block">下書き</span>
-                      <span className="text-slate-700">{stats.draftJobs}</span>
+                  <div className="grid grid-cols-2 gap-2.5 font-mono text-sm font-black">
+                    <div className="bg-slate-50 border border-slate-200 rounded p-2.5 text-center shadow-sm">
+                      <span className="text-slate-500 font-sans font-black text-[11px] block mb-0.5">下書き</span>
+                      <span className="text-slate-900 text-base font-bold">{stats.draftJobs}</span>
                     </div>
-                    <div className="bg-emerald-50/40 border border-emerald-200 rounded p-1 text-center">
-                      <span className="text-emerald-600 font-sans font-black text-[9px] block">未受諾</span>
-                      <span className="text-emerald-700">{stats.openJobs}</span>
+                    <div className="bg-emerald-50/40 border border-emerald-200 rounded p-2.5 text-center shadow-sm">
+                      <span className="text-emerald-700 font-sans font-black text-[11px] block mb-0.5">未受諾</span>
+                      <span className="text-emerald-900 text-base font-bold">{stats.openJobs}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* タイムリミットアラート */}
-                <div className="border-l border-slate-200 pl-4 flex flex-col justify-center">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">📋 直近の期日アラート</span>
-                  <div className={`p-2 border rounded text-center ${stats.nearDeadlineJobs > 0 ? 'bg-rose-50 border-rose-200 text-rose-700 animate-pulse' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
-                    <span className="text-[9px] font-black block leading-none mb-1">1週間以内の締切</span>
-                    <span className="text-base font-black font-mono tracking-tight">{stats.nearDeadlineJobs} <span className="text-[10px] font-sans font-black">件</span></span>
+                <div className="sm:border-l border-slate-200 sm:pl-4 space-y-2.5 flex flex-col justify-center">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[14px] font-black text-slate-800">⏱️ 期日アラート</span>
+                    <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Alert</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5 font-mono text-sm font-black">
+                    <div className={`border rounded p-2.5 text-center shadow-sm flex flex-col justify-between min-h-[64px] ${stats.nearDeadlineJobs > 0 ? 'bg-amber-50/60 border-amber-300 text-amber-900' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
+                      <span className="text-slate-500 font-sans font-black text-[11px] block mb-1 whitespace-nowrap">1週間以内</span>
+                      <span className="text-base font-bold text-slate-900">{stats.nearDeadlineJobs}</span>
+                    </div>
+                    <div className={`border rounded p-2.5 text-center shadow-sm flex flex-col justify-between min-h-[64px] ${stats.overdueJobs > 0 ? 'bg-rose-50 border-rose-300 text-rose-700 animate-pulse' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
+                      <span className="text-rose-600 font-sans font-black text-[11px] block mb-1 whitespace-nowrap">期限超過</span>
+                      <span className="text-base font-bold text-rose-900">{stats.overdueJobs}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -243,99 +270,103 @@ export default function OwnerDashboard() {
           </div>
 
           {/* 右側：ワーカー別リアルタイム稼働明細 */}
-          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[230px]">
-            <div className="bg-slate-50 px-3 py-2 border-b border-slate-300 flex justify-between items-center select-none">
-              <span className="text-xs font-black text-slate-700">👤 リアルタイムワーカー稼働明細</span>
-              <span className="text-[9px] font-mono text-slate-400 font-bold uppercase">Worker List</span>
+          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[290px]">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-300 flex justify-between items-center select-none">
+              <span className="text-sm font-black text-slate-800">👤 リアルタイムワーカー稼働明細</span>
+              <span className="text-[10px] font-mono text-slate-400 font-bold uppercase">Worker List</span>
             </div>
 
-            <div className="divide-y divide-slate-200 overflow-y-auto flex-1 bg-white">
+            <div className="divide-y divide-slate-200 overflow-y-auto flex-1 bg-white max-h-[230px]">
               {workerStats.map((ws, i) => (
-                <div key={i} className="p-2.5 hover:bg-slate-50 flex items-center justify-between text-xs transition-colors">
+                <div key={i} className="p-3 hover:bg-slate-50 flex items-center justify-between transition-colors">
                   <div className="min-w-0 flex-1">
-                    <div className="font-black text-slate-900 truncate">{ws.name}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 font-mono">総: {ws.total}件 (完: {ws.completed}件)</div>
+                    <div className="text-sm font-black text-slate-950 truncate">{ws.name}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5 font-bold">総請負: {ws.total}件 (完了: {ws.completed}件)</div>
                   </div>
-                  <div className="text-right flex-shrink-0 flex items-center gap-3">
-                    <div className="text-[10px] text-slate-500 font-bold flex gap-2">
-                      {ws.working > 0 && <span className="text-blue-600">進行:{ws.working}</span>}
-                      {ws.review > 0 && <span className="text-amber-600 font-black bg-amber-50 px-1 rounded">要検収:{ws.review}</span>}
+                  <div className="text-right flex-shrink-0 flex items-center gap-4">
+                    <div className="text-xs text-slate-600 font-bold flex gap-2">
+                      {ws.working > 0 && <span className="text-blue-600 bg-blue-50 px-1 rounded">進行:{ws.working}</span>}
+                      {ws.review > 0 && <span className="text-amber-600 font-black bg-amber-50 px-1.5 rounded border border-amber-200">要検収:{ws.review}</span>}
                     </div>
-                    <div className="text-xs font-black text-[#0082C8] font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200 w-16 text-center">
+                    <div className="text-sm font-black text-[#0082C8] font-mono bg-slate-50 px-2.5 py-1 rounded border border-slate-200 w-20 text-center shadow-sm">
                       {formatTime(ws.totalSeconds)}
                     </div>
                   </div>
                 </div>
               ))}
               {workerStats.length === 0 && (
-                <div className="p-10 text-center text-slate-400 italic font-medium">現在、稼働データはありません</div>
+                <div className="p-12 text-center text-slate-400 italic font-medium text-xs">現在、稼働データはありません</div>
               )}
             </div>
           </div>
 
         </div>
 
-        {/* === 下段エリア：左右2分割タイムライン === */}
+        {/* === 💡【大拡張エリア：下段】左右2分割の等幅を保ったまま、高さを 240px ➔ 450px へ縦長にドーンと大増築！ === */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           
-          {/* 左パネル：ワーカー各自の直近の行動タイムライン */}
-          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[240px]">
-            <div className="bg-slate-50 px-3 py-2 border-b border-slate-300 font-black text-xs text-slate-700 flex justify-between items-center select-none">
-              <span>🔔 ワーカー新着行動タイムライン（直近の打刻ログ）</span>
+          {/* 左パネル：ワーカー各自の直近の行動タイムライン（大容量10件リストが一覧表示可能） */}
+          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[450px]">
+            <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-300 font-black text-sm text-slate-800 flex justify-between items-center select-none">
+              <span>🔔 ワーカー新着行動タイムライン（直近の打刻ログ：最大10件）</span>
               <span className="text-[9px] font-mono text-slate-400 font-bold uppercase">Activity Logs</span>
             </div>
             <div className="divide-y divide-slate-100 bg-white overflow-y-auto flex-1">
               {recentLogs.map((log) => (
-                <div key={log.id} className="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50/40 transition-colors">
+                <div key={log.id} className="p-3 flex items-center justify-between text-slate-800 hover:bg-slate-50/40 transition-colors border-b border-slate-100 last:border-0">
                   <div className="min-w-0 flex-1 pr-3">
-                    <p className="font-bold text-slate-800 text-[11px]">
+                    <p className="font-bold text-slate-900 text-sm">
                       👤 <span className="text-slate-950 font-black">{log.workerName}</span> が実績を記録
                     </p>
-                    <p className="text-[10px] text-slate-400 truncate mt-0.5">案件: {log.jobTitle}</p>
+                    <p className="text-xs text-slate-500 truncate mt-1 font-medium">案件: {log.jobTitle}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <span className="bg-blue-50 text-[#0082C8] border border-blue-200 px-1.5 py-0.5 font-mono font-bold rounded text-[10px]">
+                    <span className="bg-blue-50 text-[#0082C8] border border-blue-200 px-2 py-0.5 font-mono font-black rounded text-xs shadow-sm">
                       +{formatTextTime(log.seconds)}
                     </span>
-                    <span className="block text-[9px] text-slate-400 font-mono mt-0.5">{log.timeStr}</span>
+                    <span className="block text-[10px] text-slate-400 font-mono mt-1 font-bold">{log.timeStr}</span>
                   </div>
                 </div>
               ))}
               {recentLogs.length === 0 && (
-                <div className="p-12 text-center text-slate-400 italic font-medium">現在、新着の打刻アクションはありません</div>
+                <div className="p-16 text-center text-slate-400 italic font-medium text-xs">現在、新着の打刻アクションはありません</div>
               )}
             </div>
           </div>
 
-          {/* 右パネル：要対応・至急案件アラートダイジェスト */}
-          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[240px]">
-            <div className="bg-slate-50 px-3 py-2 border-b border-slate-300 font-black text-xs text-slate-700 flex justify-between items-center select-none">
-              <span>⚠️ 要検収 ＆ 至急案件ダイジェスト（オーナー対応推奨）</span>
+          {/* 右パネル：要対応・至急案件アラートダイジェスト（こちらも450pxへ完全同期して、縦の線が美しく並びます） */}
+          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[450px]">
+            <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-300 font-black text-sm text-slate-800 flex justify-between items-center select-none">
+              <span>⚠️ 要検収 ＆ 至急案件・期限超過ダイジェスト（最大10件）</span>
               <span className="text-[9px] font-mono text-rose-500 font-bold uppercase">Alert Desk</span>
             </div>
             <div className="divide-y divide-slate-200 bg-white overflow-y-auto flex-1">
               {alertJobs.map((job) => (
-                <div key={job.id} className="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50/40 transition-colors">
-                  <div className="min-w-0 flex-1 pr-2">
-                    <Link href={`/owner/jobs`} className="font-black text-slate-900 hover:text-[#0082C8] hover:underline block truncate text-[11px]">
+                <div key={job.id} className="p-3 flex items-center justify-between text-slate-800 hover:bg-slate-50/40 transition-colors border-b border-slate-100 last:border-0">
+                  <div className="min-w-0 flex-1 pr-3">
+                    <Link href={`/owner/jobs`} className="font-black text-slate-950 hover:text-[#0082C8] hover:underline block truncate text-sm">
                       {job.title}
                     </Link>
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-bold">担当: {job.workerName}</p>
+                    <p className="text-xs text-slate-500 mt-1 font-bold">担当ワーカー: {job.workerName}</p>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {job.urgency === "3" && (
-                      <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-black px-1.5 py-0.5 rounded uppercase animate-pulse">至急</span>
+                    {job.isOverdue && (
+                      <span className="bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wide">期限超過</span>
                     )}
-                    {job.status === "review" ? (
-                      <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-black px-1.5 py-0.5 rounded">要検収</span>
-                    ) : (
-                      <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-black px-1.5 py-0.5 rounded">進行中</span>
+                    {job.urgency === "3" && !job.isOverdue && (
+                      <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black px-2 py-0.5 rounded uppercase animate-pulse">至急</span>
+                    )}
+                    {job.status === "review" && (
+                      <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black px-2 py-0.5 rounded">要検収</span>
+                    )}
+                    {job.status !== "review" && !job.isOverdue && (
+                      <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black px-2 py-0.5 rounded">進行中</span>
                     )}
                   </div>
                 </div>
               ))}
               {alertJobs.length === 0 && (
-                <div className="p-12 text-center text-slate-400 italic font-medium">現在、検収待ちや至急対応の案件はありません。順調です！</div>
+                <div className="p-16 text-center text-slate-400 italic font-medium text-xs">現在、検収待ちや至急対応の案件はありません。順調です！</div>
               )}
             </div>
           </div>
