@@ -42,20 +42,21 @@ function JobForm() {
   const [modalMessage, setModalMessage] = useState("");
   const [modalTargetStatus, setModalTargetStatus] = useState<'open' | 'draft' | null>(null);
 
-  // 💡【新設・完全復活】複製データの自動パース＆引き継ぎ展開ロジック
+  // 💡【新設・完全融合】詳細画面の複製ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem("duplicate_job_base");
       if (stored) {
         const baseData = JSON.parse(stored);
         
-        // 元の仕事種別（jobType）を同期
+        // 1. 仕事種別のトグル状態を同期
         if (baseData.jobType) setJobType(baseData.jobType);
 
-        // 各種オブジェクトデータをformDataステートに一括マッピング
+        // 2. 提供いただいた最新のformDataのキー構造に1ミリの狂いもなく完全同期マッピング
         setFormData(prev => ({
           ...prev,
           title: baseData.title || "",
+          reward: 0, // 報酬0円固定ルールを厳守
           count: baseData.count || 100,
           workerLimit: baseData.workerLimit || 1,
           urgency: baseData.urgency || "1",
@@ -69,11 +70,11 @@ function JobForm() {
           memo: baseData.memo || ""
         }));
 
-        // 使い終わったストレージのゴミ箱は綺麗に空にしておく（通常作成時と混ざらない安全ガード）
+        // 3. 使い終わったセッションメモリは安全に削除（次回通常作成時に混ざらないガード）
         sessionStorage.removeItem("duplicate_job_base");
       }
     } catch (e) {
-      console.error("複製データの展開に失敗しました:", e);
+      console.error("複製データの自動展開に失敗しました:", e);
     }
   }, []);
 
@@ -152,6 +153,7 @@ function JobForm() {
           <div className="flex flex-wrap gap-2 pt-1 pl-6">
             {jobType === 'form_posting' ? (
               <>
+                {/* ✉️ フォーム営業用の案内リンクセット */}
                 <a 
                   href="https://docs.google.com/spreadsheets/d/1KZRA_rLLIB5015vUxA8qYfcQPdMPbEy_WlYNER3TxEE/edit?usp=sharing" 
                   target="_blank" 
@@ -171,6 +173,7 @@ function JobForm() {
               </>
             ) : (
               <>
+                {/* 📋 リスト作成用の案内リンクセット */}
                 <a 
                   href="https://docs.google.com/spreadsheets/d/1HfFC_0AvmNUZOByMhYN4aKzl4g_mmPHsxxj2o0pn6pc/edit?usp=sharing" 
                   target="_blank" 
@@ -198,6 +201,7 @@ function JobForm() {
           <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">基本設定</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
             
+            {/* 案件種別トグルスイッチ */}
             <div className="grid grid-cols-2 gap-2">
               <button 
                 type="button"
@@ -223,6 +227,7 @@ function JobForm() {
               </button>
             </div>
             
+            {/* 案件タイトル */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">案件タイトル</label>
               <input 
@@ -235,6 +240,7 @@ function JobForm() {
               <button type="submit" id="hidden-submit-trigger" className="hidden" />
             </div>
 
+            {/* 3列配置の各種数値スペック */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">作業件数</label>
@@ -422,7 +428,7 @@ function JobForm() {
 
       </form>
 
-      {/* 💡【超シンプル化刷新】ゴツい黒太枠＆影のPOSレジ風モーダルをバッサリ全撤去！極上シンプルモダンデザインへ統一 */}
+      {/* 💡【仕様完全保持】極上シンプルモダンデザインモーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
