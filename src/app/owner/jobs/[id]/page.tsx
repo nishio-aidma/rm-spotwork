@@ -93,6 +93,35 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     }
   };
 
+  // 💡【新設・復活】この案件をベースに複製画面（新規作成ページ）へデータを引き継いでジャンプする関数
+  const handleDuplicateJob = () => {
+    if (!job) return;
+    try {
+      // 既存の入力データをセッションストレージに一時保存し、新規作成画面側で自動展開させます
+      const duplicateData = {
+        title: `${job.title || ""} _複製`,
+        jobType: job.jobType || "form_posting",
+        urgency: job.urgency || "1",
+        scClient: job.scClient || "",
+        count: job.count || 100,
+        workerLimit: job.workerLimit || 1,
+        deadline: job.deadline || "",
+        inputInfo: job.inputInfo || "",
+        targetItems: job.targetItems || "",
+        formContent: job.formContent || "",
+        siteUrl: job.siteUrl || "",
+        procedures: Array.isArray(job.procedures) ? job.procedures : ["", "", ""],
+        memo: job.memo || ""
+      };
+      
+      sessionStorage.setItem("duplicate_job_base", JSON.stringify(duplicateData));
+      router.push("/owner/jobs/new");
+    } catch (e) {
+      console.error("複製データの生成に失敗しました:", e);
+      alert("複製処理の開始に失敗しました。");
+    }
+  };
+
   if (authLoading || loading) return <OwnerShell title="読み込み中..."><div className="p-10 text-center text-slate-400 text-xs font-bold">案件情報を照会中...</div></OwnerShell>;
   if (!job) return <OwnerShell title="エラー"><div className="p-10 text-center text-rose-600 font-bold text-xs">指定された案件が見つかりませんでした。</div></OwnerShell>;
 
@@ -205,7 +234,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               </div>
 
               <div className="space-y-2">
-                {/* 💡古い window.confirm ではなくカスタムモーダルを美しく起動 */}
+                {/* 1. 募集停止（下書きに戻す）ボタン */}
                 {job.status === "open" && (
                   <button 
                     type="button"
@@ -217,6 +246,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
+                {/* 2. 検収承認ボタン */}
                 {job.status === "review" && (
                   <button 
                     type="button"
@@ -228,6 +258,16 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
+                {/* 3. 📄 この案件を複製して新規作成ボタン（独立配置完了） */}
+                <button 
+                  type="button"
+                  onClick={handleDuplicateJob}
+                  className="w-full py-2.5 bg-[#0082C8] hover:bg-[#0072B5] border border-black/10 text-white text-xs font-black rounded transition-all shadow-sm text-center active:scale-95"
+                >
+                  📄 この案件を複製して新規作成
+                </button>
+
+                {/* 4. ✏️ この案件を編集するボタン */}
                 <button 
                   type="button"
                   onClick={() => router.push(`/owner/jobs/${job.id}/edit`)}
@@ -242,17 +282,15 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
       </div>
 
-      {/* 💡【超シンプル化リフォーム】フチ線や影を全撤去した極上シンプルデザインを適用 */}
+      {/* シンプルモダンデザインモーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            {/* ポップアップヘッダー */}
             <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>{modalType === "draft" ? "🔒 募集停止の確認" : "✓ 案件の検収承認確認"}</span>
             </div>
 
-            {/* ポップアップ本文 */}
             <div className="p-6 bg-white">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 {modalType === "draft" 
@@ -262,7 +300,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               </p>
             </div>
 
-            {/* アクションボタン */}
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
                 type="button"

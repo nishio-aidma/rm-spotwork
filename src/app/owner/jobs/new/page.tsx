@@ -70,7 +70,7 @@ function JobForm() {
           memo: baseData.memo || ""
         }));
 
-        // 3. 使い終わったセッションメモリは安全に削除（次回通常作成時に混ざらないガード）
+        // 3. 使い終わったセッションメモリは安全に削除（次回通常作成時に混ざらない安全ガード）
         sessionStorage.removeItem("duplicate_job_base");
       }
     } catch (e) {
@@ -94,6 +94,7 @@ function JobForm() {
       setModalTitle("📁 下書き保存の確認");
       setModalMessage(`以下の内容を「下書き」として一時保存しますか？\n\nタイトル：${formData.title || "（タイトル未入力）"}\n\n※下書き状態の間はワーカーには一切表示されません。`);
     }
+    <g font-sans antialiased translation-all />
     setModalOpen(true);
   };
 
@@ -153,7 +154,6 @@ function JobForm() {
           <div className="flex flex-wrap gap-2 pt-1 pl-6">
             {jobType === 'form_posting' ? (
               <>
-                {/* ✉️ フォーム営業用の案内リンクセット */}
                 <a 
                   href="https://docs.google.com/spreadsheets/d/1KZRA_rLLIB5015vUxA8qYfcQPdMPbEy_WlYNER3TxEE/edit?usp=sharing" 
                   target="_blank" 
@@ -173,7 +173,6 @@ function JobForm() {
               </>
             ) : (
               <>
-                {/* 📋 リスト作成用の案内リンクセット */}
                 <a 
                   href="https://docs.google.com/spreadsheets/d/1HfFC_0AvmNUZOByMhYN4aKzl4g_mmPHsxxj2o0pn6pc/edit?usp=sharing" 
                   target="_blank" 
@@ -201,7 +200,6 @@ function JobForm() {
           <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">基本設定</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
             
-            {/* 案件種別トグルスイッチ */}
             <div className="grid grid-cols-2 gap-2">
               <button 
                 type="button"
@@ -227,7 +225,6 @@ function JobForm() {
               </button>
             </div>
             
-            {/* 案件タイトル */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">案件タイトル</label>
               <input 
@@ -240,7 +237,6 @@ function JobForm() {
               <button type="submit" id="hidden-submit-trigger" className="hidden" />
             </div>
 
-            {/* 3列配置の各種数値スペック */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">作業件数</label>
@@ -433,19 +429,16 @@ function JobForm() {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            {/* ポップアップヘッダー */}
             <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>{modalTitle}</span>
             </div>
 
-            {/* ポップアップ本文 */}
             <div className="p-6 bg-white">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 {modalMessage}
               </p>
             </div>
 
-            {/* アクションボタン */}
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
                 type="button"
