@@ -27,16 +27,34 @@ export default function OwnerNewUserPage() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false); // 連打ロック用の防壁
 
-  const handleCreateUser = async (e: React.FormEvent) => {
+  // 💡【新設】シンプルモダンモーダル用の状態管理インフラ
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"confirm" | "success" | "error">("confirm");
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalMessage, setModalMessage] = useState("");
+
+  // フォーム送信時の入り口（window.confirmを撤去し、洗練されたカスタムポップアップを起動）
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (password.length < 6) {
-      alert("パスワードは6文字以上で設定してください。");
+      setModalMode("error");
+      setModalTitle("⚠️ パスワード文字数不足");
+      setModalMessage("初期ログインパスワードは、セキュリティ保持のため6文字以上で設定してください。");
+      setModalOpen(true);
       return;
     }
 
-    const ok = window.confirm(`新しい${role === "owner" ? "オーナー" : "ワーカー"}アカウントを登録します。よろしいですか？`);
-    if (!ok) return;
+    // 登録確認ポップアップを起動
+    setModalMode("confirm");
+    setModalTitle("📥 アカウント発行の確認");
+    setModalMessage(`新しい ${role === "owner" ? "👑 オーナー" : "👥 ワーカー"} アカウントを作成し、データベースへ登録します。よろしいですか？\n\n対象：${lastName} ${firstName} (${email})`);
+    setModalOpen(true);
+  };
 
+  // 💡【確定処理】カスタムポップアップ内で「はい、登録する」を押したときに裏でハックを動かすロジック
+  const handleExecuteCreateUser = async () => {
+    setModalOpen(false); // 登録窓を一旦閉じる
     setSubmitting(true);
 
     // ★Firebaseの最凶トラップ（オーナーのセッションが上書きされて強制ログアウトされる問題）を完全に防御するハック
@@ -62,15 +80,23 @@ export default function OwnerNewUserPage() {
         updatedAt: serverTimestamp()
       });
 
-      alert(`スタッフ「${lastName} ${firstName}」の登録・アカウント発行が完了しました！`);
-      router.push("/owner/users"); // 完了後、スタッフ一覧画面へ強制送還
+      // 💡完了メッセージをWindows標準ではなく、最高にスマートな成功モーダルで表示！
+      setModalMode("success");
+      setModalTitle("✓ アカウント発行完了");
+      setModalMessage(`スタッフ「${lastName} ${firstName}」さんのログインアカウント発行および Firestore データベースへの同期保存が200%完璧に完了しました！`);
+      setModalOpen(true);
+
     } catch (error: any) {
       console.error(error);
+      setModalMode("error");
+      setModalTitle("❌ アカウント作成失敗");
+      
       if (error.code === "auth/email-already-in-use") {
-        alert("このメールアドレスは既にシステムに登録されています。");
+        setModalMessage("指定されたメールアドレスは既にシステム（Firebase Auth）に登録されています。別のアドレスを入力してください。");
       } else {
-        alert("アカウント作成に失敗しました。理由: " + error.message);
+        setModalMessage("アカウント作成処理中にエラーが発生しました。\n理由: " + error.message);
       }
+      setModalOpen(true);
     } finally {
       // 3. 後片付け：使い終わった臨時Appをメモリから安全に抹消
       if (tempApp) {
@@ -80,17 +106,24 @@ export default function OwnerNewUserPage() {
     }
   };
 
+  // 成功ポップアップを閉じて一覧へ遷移する関数
+  const handleCloseSuccessModal = () => {
+    setModalOpen(false);
+    router.push("/owner/users"); // 完了後、スタッフ一覧画面へ強制送還
+  };
+
   return (
     <OwnerShell title="スタッフ新規登録" subTitle="管理者によるアカウント手動発行">
       <div className="max-w-md mx-auto bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden text-slate-900 font-sans antialiased mt-6">
         
         {/* レジ風ヘッダー */}
-        <div className="bg-slate-100 p-3 border-b-2 border-slate-300 flex justify-between items-center">
+        <div className="bg-slate-100 p-3 border-b-2 border-slate-300 flex justify-between items-center select-none">
           <span className="text-xs font-black text-slate-700">登録フォーム</span>
           <span className="text-[10px] font-mono font-bold text-slate-400">STAFF ID ISSUANCE</span>
         </div>
 
-        <form onSubmit={handleCreateUser} className="p-4 space-y-4">
+        {/* 💡onSubmitを新設したスマートポップアップの検知窓口に差し替え */}
+        <form onSubmit={handleFormSubmit} className="p-4 space-y-4">
           
           {/* 権限区分の選択：トグルボタン仕様 */}
           <div className="space-y-1">
@@ -167,7 +200,7 @@ export default function OwnerNewUserPage() {
           <div className="space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block select-none">初期ログインパスワード（6文字以上）</label>
             <input
-              type="text" // パスワードの文字を管理者自身が目視確認しやすいよう敢えてtextで表示
+              type="text" 
               required
               disabled={submitting}
               placeholder="最低6文字以上の英数字"
@@ -198,6 +231,68 @@ export default function OwnerNewUserPage() {
 
         </form>
       </div>
+
+      {/* 💡【超シンプル化リフォーム】アカウント発行・登録完了ポップアップも、無駄なフチ線や影のない極上シンプルデザインに完全統一！ */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            
+            {/* ポップアップヘッダー：モードに連動してテーマカラーが上品に変化 */}
+            <div className={`px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none text-white ${
+              modalMode === "success" ? "bg-emerald-600" : modalMode === "error" ? "bg-rose-600" : "bg-[#0082C8]"
+            }`}>
+              <span>{modalTitle}</span>
+            </div>
+
+            {/* ポップアップ本文 */}
+            <div className="p-6 bg-white">
+              <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
+                {modalMessage}
+              </p>
+            </div>
+
+            {/* アクションボタンエリア */}
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
+              {modalMode === "confirm" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExecuteCreateUser}
+                    className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                  >
+                    はい、登録する
+                  </button>
+                </>
+              ) : modalMode === "success" ? (
+                <button
+                  type="button"
+                  onClick={handleCloseSuccessModal}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                >
+                  OK（スタッフ一覧へ）
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  className="px-5 py-2 bg-slate-700 hover:bg-slate-800 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                >
+                  戻って修正する
+                </button>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </OwnerShell>
   );
 }

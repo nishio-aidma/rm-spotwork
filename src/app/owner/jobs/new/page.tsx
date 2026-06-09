@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
@@ -42,6 +42,41 @@ function JobForm() {
   const [modalMessage, setModalMessage] = useState("");
   const [modalTargetStatus, setModalTargetStatus] = useState<'open' | 'draft' | null>(null);
 
+  // 💡【新設・完全復活】複製データの自動パース＆引き継ぎ展開ロジック
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("duplicate_job_base");
+      if (stored) {
+        const baseData = JSON.parse(stored);
+        
+        // 元の仕事種別（jobType）を同期
+        if (baseData.jobType) setJobType(baseData.jobType);
+
+        // 各種オブジェクトデータをformDataステートに一括マッピング
+        setFormData(prev => ({
+          ...prev,
+          title: baseData.title || "",
+          count: baseData.count || 100,
+          workerLimit: baseData.workerLimit || 1,
+          urgency: baseData.urgency || "1",
+          deadline: baseData.deadline || "",
+          scClient: baseData.scClient || "",
+          siteUrl: baseData.siteUrl || "",
+          targetItems: baseData.targetItems || "",
+          formContent: baseData.formContent || "",
+          inputInfo: baseData.inputInfo || "",
+          procedures: Array.isArray(baseData.procedures) ? baseData.procedures : ["", "", ""],
+          memo: baseData.memo || ""
+        }));
+
+        // 使い終わったストレージのゴミ箱は綺麗に空にしておく（通常作成時と混ざらない安全ガード）
+        sessionStorage.removeItem("duplicate_job_base");
+      }
+    } catch (e) {
+      console.error("複製データの展開に失敗しました:", e);
+    }
+  }, []);
+
   // ボタンを押したときにまずポップアップを開く仕掛け
   const triggerSubmitModal = (status: 'open' | 'draft') => {
     if (!formData.title.trim()) {
@@ -53,10 +88,10 @@ function JobForm() {
     setModalTargetStatus(status);
     if (status === 'open') {
       setModalTitle("🔓 案件公開の確認");
-      setModalMessage(`以下の内容で案件を即座に「公開」しますか？\n\nタイトル：${formData.title}\n※公開するとワーカー全員の仕事探し一覧に即時掲載されます。`);
+      setModalMessage(`以下の内容で案件を即座に「公開」しますか？\n\nタイトル：${formData.title}\n\n※公開するとワーカー全員の仕事探し一覧に即時掲載され、受諾募集がスタートします。`);
     } else {
       setModalTitle("📁 下書き保存の確認");
-      setModalMessage(`以下の内容を「下書き」として一時保存しますか？\n\nタイトル：${formData.title || "（タイトル未入力）"}\n※下書き状態の間はワーカーには表示されません。`);
+      setModalMessage(`以下の内容を「下書き」として一時保存しますか？\n\nタイトル：${formData.title || "（タイトル未入力）"}\n\n※下書き状態の間はワーカーには一切表示されません。`);
     }
     setModalOpen(true);
   };
@@ -98,7 +133,7 @@ function JobForm() {
       <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
         
         {/* =========================================================================
-            💡【大改造】仕事種別（トグル）と自動連動する事前準備ガイドメッセージセクション
+            💡【仕様完全保持】仕事種別（トグル）と自動連動する事前準備ガイドメッセージセクション
             ========================================================================= */}
         <section className="bg-slate-50 border-2 border-dashed border-slate-300 rounded p-3.5 space-y-2 shadow-inner">
           <div className="flex items-start gap-2">
@@ -114,11 +149,9 @@ function JobForm() {
             </div>
           </div>
           
-          {/* jobType（仕事種別）の値によって、表示するボタンのジャンプ先リンクを自動で切り替えます */}
           <div className="flex flex-wrap gap-2 pt-1 pl-6">
             {jobType === 'form_posting' ? (
               <>
-                {/* ✉️ フォーム営業用の案内リンクセット */}
                 <a 
                   href="https://docs.google.com/spreadsheets/d/1KZRA_rLLIB5015vUxA8qYfcQPdMPbEy_WlYNER3TxEE/edit?usp=sharing" 
                   target="_blank" 
@@ -138,7 +171,6 @@ function JobForm() {
               </>
             ) : (
               <>
-                {/* 📋 リスト作成用の案内リンクセット */}
                 <a 
                   href="https://docs.google.com/spreadsheets/d/1HfFC_0AvmNUZOByMhYN4aKzl4g_mmPHsxxj2o0pn6pc/edit?usp=sharing" 
                   target="_blank" 
@@ -161,12 +193,11 @@ function JobForm() {
         </section>
 
 
-        {/* 1. 基本設定セクション（ここから下はこれまでの仕様を完全保持） */}
+        {/* 1. 基本設定セクション */}
         <section className="space-y-2">
           <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">基本設定</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
             
-            {/* 案件種別トグルスイッチ（ここをカチカチ切り替えると、最上部のガイドも自動連動します） */}
             <div className="grid grid-cols-2 gap-2">
               <button 
                 type="button"
@@ -192,7 +223,6 @@ function JobForm() {
               </button>
             </div>
             
-            {/* 案件タイトル */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">案件タイトル</label>
               <input 
@@ -205,7 +235,6 @@ function JobForm() {
               <button type="submit" id="hidden-submit-trigger" className="hidden" />
             </div>
 
-            {/* 3列配置の各種数値スペック */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">作業件数</label>
@@ -366,7 +395,7 @@ function JobForm() {
           <button 
             type="button" 
             onClick={() => router.back()} 
-            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 border border-slate-400 rounded text-xs font-bold text-slate-700 transition-colors"
+            className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 rounded text-xs font-black transition-colors"
           >
             キャンセル
           </button>
@@ -393,36 +422,38 @@ function JobForm() {
 
       </form>
 
-      {/* POSレジ風ソリッドデザイン・カスタム確認ポップアップ（モーダル） */}
+      {/* 💡【超シンプル化刷新】ゴツい黒太枠＆影のPOSレジ風モーダルをバッサリ全撤去！極上シンプルモダンデザインへ統一 */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 font-sans antialiased">
-          <div className="bg-white border-4 border-slate-950 w-full max-w-sm rounded shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] overflow-hidden text-slate-900">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            <div className="bg-slate-950 text-white p-3 font-black text-xs flex justify-between items-center tracking-wider select-none">
+            {/* ポップアップヘッダー */}
+            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>{modalTitle}</span>
-              <span className="text-[9px] font-mono font-bold text-slate-400">REGISTRATION INTERFACE</span>
             </div>
 
-            <div className="p-5 border-b-2 border-slate-200 bg-slate-50">
-              <p className="text-xs font-bold text-slate-700 leading-relaxed whitespace-pre-wrap">
+            {/* ポップアップ本文 */}
+            <div className="p-6 bg-white">
+              <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 {modalMessage}
               </p>
             </div>
 
-            <div className="grid grid-cols-2 divide-x-4 divide-slate-950 border-t-2 border-slate-950 bg-white">
+            {/* アクションボタン */}
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="py-3.5 bg-white text-slate-600 hover:bg-slate-100 font-black text-xs text-center transition-colors outline-none tracking-wide"
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
               >
-                ❌ いいえ
+                キャンセル
               </button>
               <button
                 type="button"
                 onClick={handleModalConfirm}
-                className="py-3.5 bg-slate-900 text-white hover:bg-slate-800 font-black text-xs text-center transition-colors outline-none tracking-wide"
+                className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
               >
-                ⭕ はい、実行する
+                はい、実行する
               </button>
             </div>
 
