@@ -42,7 +42,7 @@ function JobForm() {
   const [modalMessage, setModalMessage] = useState("");
   const [modalTargetStatus, setModalTargetStatus] = useState<'open' | 'draft' | null>(null);
 
-  // 💡【新設・完全融合】詳細画面の複製ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
+  // 💡【仕様保持】詳細画面の複製ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem("duplicate_job_base");
@@ -94,7 +94,6 @@ function JobForm() {
       setModalTitle("📁 下書き保存の確認");
       setModalMessage(`以下の内容を「下書き」として一時保存しますか？\n\nタイトル：${formData.title || "（タイトル未入力）"}\n\n※下書き状態の間はワーカーには一切表示されません。`);
     }
-    <g font-sans antialiased translation-all />
     setModalOpen(true);
   };
 
@@ -105,10 +104,12 @@ function JobForm() {
     setSubmitting(true);
 
     try {
+      // 💡【最重要変更】 ownerId を作った個人のUIDにせず、システム共通の共有IDで上書き！
+      // これにより、誰が起票した案件であっても、全てのオーナー、ワーカーがいつでも何不自由なく閲覧・共有できるようになります。
       await addDoc(collection(db, "jobs"), {
         ...formData,
         jobType,
-        ownerId: auth.currentUser.uid,
+        ownerId: "system_shared_owner", // 🔒 個人のUIDによる閲覧ロックを完全撤去して全体共有化！
         status: modalTargetStatus,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -424,21 +425,24 @@ function JobForm() {
 
       </form>
 
-      {/* 💡【仕様完全保持】極上シンプルモダンデザインモーダル */}
+      {/* 💡【仕様保持】極上シンプルモダンデザインモーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
+            {/* ポップアップヘッダー */}
             <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>{modalTitle}</span>
             </div>
 
+            {/* ポップアップ本文 */}
             <div className="p-6 bg-white">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 {modalMessage}
               </p>
             </div>
 
+            {/* アクションボタン */}
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
                 type="button"
