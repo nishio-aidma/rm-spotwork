@@ -16,15 +16,17 @@ export default function OwnerJobsPage() {
   const [filterJobType, setFilterJobType] = useState<string>("all");
   const [filterUrgency, setFilterUrgency] = useState<string>("all");
 
-  // 💡【新設】カスタムモーダルポップアップ用の状態管理
+  // 💡カスタムモーダルポップアップ用の状態管理
   const [modalOpen, setModalOpen] = useState(false);
   const [targetJob, setTargetJob] = useState<{ id: string; title: string } | null>(null);
 
-  // 自分が発注した案件を一括取得
-  const fetchOwnerJobs = async (userId: string) => {
+  // 💡【最重要変更】ownerId の属人化ロックを完全解除し、システム共有の案件を一括取得
+  const fetchOwnerJobs = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, "jobs"), where("ownerId", "==", userId));
+      // 🔒「where ownerId == userId」を撤去し、全員で共有する system_shared_owner の案件をすべてロード！
+      // これにより、別のオーナーアカウントが起票・複製した案件も全員のダッシュボードに100%リアルタイム共有されます。
+      const q = query(collection(db, "jobs"), where("ownerId", "==", "system_shared_owner"));
       const snap = await getDocs(q);
       
       const jobList = snap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
@@ -55,7 +57,8 @@ export default function OwnerJobsPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        fetchOwnerJobs(user.uid);
+        // 💡認証が通ったら、個人のUIDではなく、共通共有エリアからデータを引っ張る
+        fetchOwnerJobs();
       } else {
         setLoading(false);
       }
@@ -262,8 +265,8 @@ export default function OwnerJobsPage() {
                         <Link href={`/owner/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">
                           詳細 →
                         </Link>
-                        {/* 💡window.confirmではなくカスタムモーダルを起動するように変更 */}
                         <button
+                          type="button"
                           onClick={() => triggerDeleteModal(job.id, job.title)}
                           className="text-slate-300 hover:text-rose-600 transition-colors p-1"
                           title="この案件をデータベースから完全削除"
@@ -288,17 +291,15 @@ export default function OwnerJobsPage() {
 
       </div>
 
-      {/* 💡【超シンプル化リフォーム】オーナー側の案件削除確認ポップアップも、フチ取り線を削ぎ落とした極上シンプルモダンデザインへ完全統一！ */}
+      {/* カスタム確認ポップアップ（モーダル） */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            {/* ポップアップヘッダー：クリーンブルーのモダン細帯 */}
             <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>⚠️ 案件の完全削除確認</span>
             </div>
 
-            {/* ポップアップ本文：純白でシャープな見やすさ */}
             <div className="p-6 bg-white space-y-3">
               <p className="text-xs font-bold text-rose-600 leading-relaxed">
                 【警告】この案件をデータベースから完全に消去しますか？
@@ -311,7 +312,6 @@ export default function OwnerJobsPage() {
               </p>
             </div>
 
-            {/* アクションボタン：グレー＆ブルーの洗練されたフラット配置 */}
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
                 type="button"

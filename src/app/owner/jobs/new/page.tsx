@@ -22,18 +22,18 @@ function JobForm() {
   
   const [formData, setFormData] = useState({
     title: "",
-    reward: 0,       // ① 報酬はフォームから撤去し、裏で0固定で送信
+    reward: 0,       // 報酬はフォームから撤去し、裏で0固定で送信
     count: 100,      // 予定作業件数
     workerLimit: 1,  // 募集人数
     deadline: "",
     urgency: "1",
     siteUrl: "",
-    targetItems: "", // ⑤ リスト作成 > 「入力項目」URL用
-    formContent: "", // ② フォーム投稿 > 「送信文面内容」URL用
-    inputInfo: "",   // ④ フォーム投稿 > 「入力情報」URL用
+    targetItems: "", // リスト作成 > 「入力項目」URL用
+    formContent: "", // フォーム投稿 > 「送信文面内容」URL用
+    inputInfo: "",   // フォーム投稿 > 「入力情報」URL用
     scClient: "",    // SCクライアント
     procedures: ["", "", ""],
-    memo: ""         // ⑥ 新規追加：メモ欄
+    memo: ""         // メモ欄
   });
 
   // カスタムポップアップ管理用のステート群
@@ -42,21 +42,19 @@ function JobForm() {
   const [modalMessage, setModalMessage] = useState("");
   const [modalTargetStatus, setModalTargetStatus] = useState<'open' | 'draft' | null>(null);
 
-  // 💡【仕様保持】詳細画面の複製ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
+  // 複製ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem("duplicate_job_base");
       if (stored) {
         const baseData = JSON.parse(stored);
         
-        // 1. 仕事種別のトグル状態を同期
         if (baseData.jobType) setJobType(baseData.jobType);
 
-        // 2. 提供いただいた最新のformDataのキー構造に1ミリの狂いもなく完全同期マッピング
         setFormData(prev => ({
           ...prev,
           title: baseData.title || "",
-          reward: 0, // 報酬0円固定ルールを厳守
+          reward: 0,
           count: baseData.count || 100,
           workerLimit: baseData.workerLimit || 1,
           urgency: baseData.urgency || "1",
@@ -70,7 +68,6 @@ function JobForm() {
           memo: baseData.memo || ""
         }));
 
-        // 3. 使い終わったセッションメモリは安全に削除（次回通常作成時に混ざらない安全ガード）
         sessionStorage.removeItem("duplicate_job_base");
       }
     } catch (e) {
@@ -78,7 +75,6 @@ function JobForm() {
     }
   }, []);
 
-  // ボタンを押したときにまずポップアップを開く仕掛け
   const triggerSubmitModal = (status: 'open' | 'draft') => {
     if (!formData.title.trim()) {
       const fakeSubmitButton = document.getElementById("hidden-submit-trigger");
@@ -97,19 +93,18 @@ function JobForm() {
     setModalOpen(true);
   };
 
-  // ポップアップ内で「はい」を押したときに、本番のFirebase送信を走らせる
   const handleModalConfirm = async () => {
     if (!auth.currentUser || !modalTargetStatus) return;
     setModalOpen(false);
     setSubmitting(true);
 
     try {
-      // 💡【最重要変更】 ownerId を作った個人のUIDにせず、システム共通の共有IDで上書き！
-      // これにより、誰が起票した案件であっても、全てのオーナー、ワーカーがいつでも何不自由なく閲覧・共有できるようになります。
+      // 💡 ownerIdを全員で共通の固定文字列にすることで、アカウントを跨いだ共有を可能にします
       await addDoc(collection(db, "jobs"), {
         ...formData,
         jobType,
-        ownerId: "system_shared_owner", // 🔒 個人のUIDによる閲覧ロックを完全撤去して全体共有化！
+        ownerId: "system_shared_owner", 
+        createdBy: auth.currentUser.uid, // 念のため、誰が最初に作ったかの記録用
         status: modalTargetStatus,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -135,9 +130,7 @@ function JobForm() {
     <div className="max-w-full mx-auto pb-20 text-slate-900 font-sans antialiased">
       <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
         
-        {/* =========================================================================
-            💡【仕様完全保持】仕事種別（トグル）と自動連動する事前準備ガイドメッセージセクション
-            ========================================================================= */}
+        {/* 事前準備ガイドメッセージセクション */}
         <section className="bg-slate-50 border-2 border-dashed border-slate-300 rounded p-3.5 space-y-2 shadow-inner">
           <div className="flex items-start gap-2">
             <span className="text-xs">💡</span>
@@ -195,12 +188,10 @@ function JobForm() {
           </div>
         </section>
 
-
         {/* 1. 基本設定セクション */}
         <section className="space-y-2">
           <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">基本設定</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
-            
             <div className="grid grid-cols-2 gap-2">
               <button 
                 type="button"
@@ -268,7 +259,6 @@ function JobForm() {
         <section className="space-y-2">
           <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">作業詳細（リンク設定）</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
-            
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">SCクライアント</label>
               <input 
@@ -425,24 +415,18 @@ function JobForm() {
 
       </form>
 
-      {/* 💡【仕様保持】極上シンプルモダンデザインモーダル */}
+      {/* モーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
-            
-            {/* ポップアップヘッダー */}
             <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>{modalTitle}</span>
             </div>
-
-            {/* ポップアップ本文 */}
             <div className="p-6 bg-white">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 {modalMessage}
               </p>
             </div>
-
-            {/* アクションボタン */}
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
                 type="button"
@@ -459,7 +443,6 @@ function JobForm() {
                 はい、実行する
               </button>
             </div>
-
           </div>
         </div>
       )}
