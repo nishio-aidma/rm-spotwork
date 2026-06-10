@@ -21,8 +21,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
   // 💡シンプルモダン確認ポップアップ用の管理ステート
   const [modalOpen, setModalOpen] = useState(false);
-  // 💡どのアクション（下書き戻し or 検収承認）を呼ぶかを識別するステート
-  const [modalType, setModalType] = useState<"draft" | "approve" | null>(null);
+  // 💡どのアクション（下書き戻し / 検収承認 / 公開）を呼ぶかを識別するステート
+  const [modalType, setModalType] = useState<"draft" | "approve" | "publish" | null>(null);
 
   useEffect(() => {
     async function fetchJob() {
@@ -50,13 +50,61 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     return `${h}h ${m}m ${sec}s`;
   };
 
-  // 💡ポップアップを起動する窓口
-  const triggerModal = (type: "draft" | "approve") => {
+  // MEMBERSチャットグループへ案件公開の自動通知を撃ち込む関数
+  const sendMembersNotification = async (targetJob: any) => {
+    const token = process.env.NEXT_PUBLIC_MEMBERS_API_TOKEN;
+    const roomId = process.env.NEXT_PUBLIC_MEMBERS_ROOM_ID;
+
+    if (!token || !roomId) {
+      console.warn("MEMBERSの通知設定（環境変数）が見つからないため、通知をスキップしました。");
+      return;
+    }
+
+    try {
+      const memberUrl = `https://api.mem-bers.jp/web-api/rooms/${roomId}/members`;
+      const memberRes = await fetch(memberUrl, {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      
+      let allMemberIds = "";
+      if (memberRes.ok) {
+        const memberJson = await memberRes.json();
+        if (memberJson?.member && Array.isArray(memberJson.member)) {
+          allMemberIds = memberJson.member.map((m: any) => m.id).join(",");
+        }
+      }
+
+      const jobUrl = `https://rm-spotwork.vercel.app/owner/jobs/${targetJob.id}`;
+      // 💡通知メッセージの文言も「コピー」へスマートに修正
+      const jobTypeName = targetJob.jobType === "form_posting" ? "✉️ フォーム投稿" : "📋 リスト作成";
+
+      const messageBody = `🚀 【案件公開通知】新しい案件が公開されました！\n\n【案件タイトル】 ${targetJob.title || "未設定"}\n【仕事種別】 ${jobTypeName}\n【SCクライアント】 ${targetJob.scClient || "-"}\n【予定作業件数】 ${targetJob.count || 0} 件\n【指定納期】 ${targetJob.deadline || "未設定"}\n\n👇 案件の詳細確認・受諾はこちらから！\n${jobUrl}`;
+
+      const postUrl = `https://api.mem-bers.jp/web-api/rooms/${roomId}/messages`;
+      const formData = new FormData();
+      formData.append("body", messageBody);
+      if (allMemberIds) {
+        formData.append("to_id", allMemberIds);
+      }
+
+      await fetch(postUrl, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+        body: formData
+      });
+
+      console.log("MEMBERSへの公開通知送信が完了しました。");
+    } catch (error) {
+      console.error("MEMBERSへの通知送信中にエラーが発生しました:", error);
+    }
+  };
+
+  const triggerModal = (type: "draft" | "approve" | "publish") => {
     setModalType(type);
     setModalOpen(true);
   };
 
-  // 💡【確定処理】カスタムポップアップ内から実行される選択ロジック
   const handleModalConfirm = async () => {
     const action = modalType;
     setModalOpen(false);
@@ -73,7 +121,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           updatedAt: serverTimestamp()
         });
         setJob((prev: any) => ({ ...prev, status: "draft" }));
-        alert("案件を受諾募集停止にし、下書き状態へ戻しました。");
+        // 💡 Windowsデフォルトのアラートを完全追放し、裏で処理が完了するように変更（必要に応じてモダン通知コンポーネントを導入可能ですが、現状は体験を阻害しないフラットな確定処理にします）
       } 
       
       else if (action === "approve") {
@@ -83,23 +131,32 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           updatedAt: serverTimestamp()
         });
         setJob((prev: any) => ({ ...prev, status: "completed" }));
-        alert("案件を承認（検収完了）しました！");
+      }
+
+      else if (action === "publish") {
+        await updateDoc(jobRef, {
+          status: "open",
+          updatedAt: serverTimestamp()
+        });
+        
+        const updatedJob = { ...job, status: "open" };
+        setJob(updatedJob);
+
+        await sendMembersNotification(updatedJob);
       }
     } catch (e) {
       console.error(e);
-      alert("処理に失敗しました。");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // 💡【新設・復活】この案件をベースに複製画面（新規作成ページ）へデータを引き継いでジャンプする関数
-  const handleDuplicateJob = () => {
+  // 💡【文言修正】末尾の付与文字列を「_複製」から「_コピー」へと修正
+  const handleDuplicateJob = (isEditMode: boolean = false) => {
     if (!job) return;
     try {
-      // 既存の入力データをセッションストレージに一時保存し、新規作成画面側で自動展開させます
       const duplicateData = {
-        title: `${job.title || ""} _複製`,
+        title: isEditMode ? (job.title || "") : `${job.title || ""} _コピー`,
         jobType: job.jobType || "form_posting",
         urgency: job.urgency || "1",
         scClient: job.scClient || "",
@@ -111,14 +168,14 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         formContent: job.formContent || "",
         siteUrl: job.siteUrl || "",
         procedures: Array.isArray(job.procedures) ? job.procedures : ["", "", ""],
-        memo: job.memo || ""
+        memo: job.memo || "" ,
+        existingJobId: isEditMode ? job.id : null
       };
       
       sessionStorage.setItem("duplicate_job_base", JSON.stringify(duplicateData));
       router.push("/owner/jobs/new");
     } catch (e) {
-      console.error("複製データの生成に失敗しました:", e);
-      alert("複製処理の開始に失敗しました。");
+      console.error("データの引き継ぎに失敗しました:", e);
     }
   };
 
@@ -159,10 +216,9 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント名</span>
               <p className="text-xs font-black text-slate-900 truncate mt-1">{job.scClient || "-"}</p>
             </div>
+            
             <div className="p-3 flex flex-col justify-between min-h-[64px]">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                {job.jobType === 'form_posting' ? '送信文面指示書' : '抽出項目指示書'}
-              </span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力情報</span>
               <div className="mt-1 flex items-center justify-between">
                 <span className="text-[10px] text-slate-400 font-mono truncate max-w-[120px]">{job.inputInfo || job.targetItems || "未登録"}</span>
                 {(job.inputInfo || job.targetItems) && (
@@ -170,6 +226,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 )}
               </div>
             </div>
+            
             <div className="p-3 flex flex-col justify-between min-h-[64px]">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">予定作業件数</span>
               <p className="text-xs font-black text-slate-900 font-mono text-right mt-1">{job.count || 0} 件</p>
@@ -203,6 +260,15 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               )}
             </div>
           </div>
+
+          {job.memo && (
+            <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
+              <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-amber-500 pl-2">特記事項 / 注意事項メモ</h2>
+              <div className="bg-amber-50/40 border border-amber-200 rounded p-3 text-xs text-slate-700 font-medium whitespace-pre-wrap leading-relaxed">
+                {job.memo}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 右側：コントロールサイドインフラ */}
@@ -234,7 +300,17 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               </div>
 
               <div className="space-y-2">
-                {/* 1. 募集停止（下書きに戻す）ボタン */}
+                {job.status === "draft" && (
+                  <button 
+                    type="button"
+                    onClick={() => triggerModal("publish")}
+                    disabled={submitting}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 border border-black/10 text-white text-xs font-black rounded transition-colors text-center shadow-sm"
+                  >
+                    🟢 案件を本番公開する
+                  </button>
+                )}
+
                 {job.status === "open" && (
                   <button 
                     type="button"
@@ -246,7 +322,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
-                {/* 2. 検収承認ボタン */}
                 {job.status === "review" && (
                   <button 
                     type="button"
@@ -258,19 +333,18 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
-                {/* 3. 📄 この案件を複製して新規作成ボタン（独立配置完了） */}
+                {/* 💡【文言統一】ボタン名を「コピー」へ変更 */}
                 <button 
                   type="button"
-                  onClick={handleDuplicateJob}
+                  onClick={() => handleDuplicateJob(false)}
                   className="w-full py-2.5 bg-[#0082C8] hover:bg-[#0072B5] border border-black/10 text-white text-xs font-black rounded transition-all shadow-sm text-center active:scale-95"
                 >
-                  📄 この案件を複製して新規作成
+                  📄 この案件をコピーして新規作成
                 </button>
 
-                {/* 4. ✏️ この案件を編集するボタン */}
                 <button 
                   type="button"
-                  onClick={() => router.push(`/owner/jobs/${job.id}/edit`)}
+                  onClick={() => handleDuplicateJob(true)}
                   className="w-full py-2 bg-white hover:bg-slate-50 border-2 border-slate-300 text-slate-700 text-xs font-black rounded transition-colors text-center"
                 >
                   ✏️ この案件を編集する
@@ -288,14 +362,19 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
             <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
-              <span>{modalType === "draft" ? "🔒 募集停止の確認" : "✓ 案件の検収承認確認"}</span>
+              <span>
+                {modalType === "publish" ? "🟢 案件の公開確認" : 
+                 modalType === "draft" ? "🔒 募集停止の確認" : "✓ 案件の検収承認確認"}
+              </span>
             </div>
 
             <div className="p-6 bg-white">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
-                {modalType === "draft" 
+                {modalType === "publish"
+                  ? "この下書き案件を全体に公開し、ワーカーが即座に応募・閲覧できる状態にしますか？"
+                  : modalType === "draft"
                   ? "この案件の受諾募集を一度ストップし、非公開の『下書き状態』に戻しますか？\n\n戻すと、ワーカー側の案件を探す画面から一時的に表示が消えます。"
-                  : "この案件の作業内容および稼働時間を承認（検収完了）しますか？\n\n確定するとステータスが『完了』となり、ワーカーの実績として確定します。"
+                  : "この案件の作業内容および稼働時間を承認（検収完了）しますか？\n\n確定するとステータスが『完了』となり、ワーカー実績として確定します。"
                 }
               </p>
             </div>
@@ -312,10 +391,10 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 type="button"
                 onClick={handleModalConfirm}
                 className={`px-4 py-2 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm ${
-                  modalType === "draft" ? "bg-[#0082C8] hover:bg-[#0072B5]" : "bg-emerald-600 hover:bg-emerald-700"
+                  modalType === "draft" ? "bg-slate-700 hover:bg-slate-800" : "bg-emerald-600 hover:bg-emerald-700"
                 }`}
               >
-                {modalType === "draft" ? "はい、下書きに戻す" : "はい、承認する"}
+                はい、実行する
               </button>
             </div>
 

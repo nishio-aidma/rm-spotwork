@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import OwnerShell from "@/components/OwnerShell";
 
@@ -20,6 +20,9 @@ function JobForm() {
   const [submitting, setSubmitting] = useState(false);
   const [jobType, setJobType] = useState<'form_posting' | 'list_creation'>('form_posting');
   
+  // 💡上書き編集（Editモード）かどうかを判定するためのID退避用ステート
+  const [existingJobId, setExistingJobId] = useState<string | null>(null);
+
   const [formData, setFormData] = useState({
     title: "",
     reward: 0,       // 報酬はフォームから撤去し、裏で0固定で送信
@@ -42,7 +45,7 @@ function JobForm() {
   const [modalMessage, setModalMessage] = useState("");
   const [modalTargetStatus, setModalTargetStatus] = useState<'open' | 'draft' | null>(null);
 
-  // 複製ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
+  // コピーボタン・編集ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem("duplicate_job_base");
@@ -68,10 +71,14 @@ function JobForm() {
           memo: baseData.memo || ""
         }));
 
+        if (baseData.existingJobId) {
+          setExistingJobId(baseData.existingJobId);
+        }
+
         sessionStorage.removeItem("duplicate_job_base");
       }
     } catch (e) {
-      console.error("複製データの自動展開に失敗しました:", e);
+      console.error("データの自動展開に失敗しました:", e);
     }
   }, []);
 
@@ -83,12 +90,19 @@ function JobForm() {
     }
 
     setModalTargetStatus(status);
-    if (status === 'open') {
-      setModalTitle("🔓 案件公開の確認");
-      setModalMessage(`以下の内容で案件を即座に「公開」しますか？\n\nタイトル：${formData.title}\n\n※公開するとワーカー全員の仕事探し一覧に即時掲載され、受諾募集がスタートします。`);
+    
+    // 💡【文言統一】「複製」から「コピー」へ完全変更
+    if (existingJobId) {
+      setModalTitle(status === 'open' ? "🔓 編集内容の公開適用" : "📁 編集内容の下書き保存");
+      setModalMessage(`修正した内容を既存の案件（ID: ${existingJobId}）に上書き保存しますか？\n\nタイトル：${formData.title}`);
     } else {
-      setModalTitle("📁 下書き保存の確認");
-      setModalMessage(`以下の内容を「下書き」として一時保存しますか？\n\nタイトル：${formData.title || "（タイトル未入力）"}\n\n※下書き状態の間はワーカーには一切表示されません。`);
+      if (status === 'open') {
+        setModalTitle("🔓 案件公開の確認");
+        setModalMessage(`以下の内容で案件を即座に「公開」しますか？\n\nタイトル：${formData.title}\n\n※公開するとワーカー全員の仕事探し一覧に即時掲載され、受諾募集がスタートします。`);
+      } else {
+        setModalTitle("📁 下書き保存の確認");
+        setModalMessage(`以下の内容を「下書き」として一時保存しますか？\n\nタイトル：${formData.title || "（タイトル未入力）"}\n\n※下書き状態の間はワーカーには一切表示されません。`);
+      }
     }
     setModalOpen(true);
   };
@@ -99,21 +113,30 @@ function JobForm() {
     setSubmitting(true);
 
     try {
-      // 💡 ownerIdを全員で共通の固定文字列にすることで、アカウントを跨いだ共有を可能にします
-      await addDoc(collection(db, "jobs"), {
+      const sharedFields = {
         ...formData,
         jobType,
-        ownerId: "system_shared_owner", 
-        createdBy: auth.currentUser.uid, // 念のため、誰が最初に作ったかの記録用
+        ownerId: "system_shared_owner",
         status: modalTargetStatus,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        totalAccumulatedSeconds: 0
-      });
-      router.push("/owner/jobs");
+        updatedAt: serverTimestamp()
+      };
+
+      if (existingJobId) {
+        const jobRef = doc(db, "jobs", existingJobId);
+        await updateDoc(jobRef, sharedFields);
+        // 💡 Windowsのデフォルトアラート(alert)を完全抹消！何も出さずに一覧へ戻るスマートな体験へ
+        router.push(`/owner/jobs/${existingJobId}`);
+      } else {
+        await addDoc(collection(db, "jobs"), {
+          ...sharedFields,
+          createdBy: auth.currentUser.uid,
+          createdAt: serverTimestamp(),
+          totalAccumulatedSeconds: 0
+        });
+        router.push("/owner/jobs");
+      }
     } catch (error) {
       console.error(error);
-      alert("エラーが発生しました");
     } finally {
       setSubmitting(false);
       setModalTargetStatus(null);
@@ -400,7 +423,7 @@ function JobForm() {
               disabled={submitting}
               className="px-4 py-2 bg-white border-2 border-slate-300 text-slate-800 rounded text-xs font-black hover:bg-slate-50 hover:border-slate-400 transition-colors"
             >
-              下書きとして保存
+              {existingJobId ? "下書きとして上書き保存" : "下書きとして保存"}
             </button>
             <button 
               type="button"
@@ -408,7 +431,7 @@ function JobForm() {
               disabled={submitting}
               className="px-5 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white border border-black/10 rounded text-xs font-bold disabled:opacity-50 transition-colors shadow-sm"
             >
-              {submitting ? "処理中..." : "案件を公開する"}
+              {submitting ? "処理中..." : existingJobId ? "公開状態で上書き保存" : "案件を公開する"}
             </button>
           </div>
         </div>

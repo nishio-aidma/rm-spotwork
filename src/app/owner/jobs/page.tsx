@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, query, where, getDocs, doc, deleteDoc } from "firebase/firestore";
+import { collection, query, getDocs, doc, deleteDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import OwnerShell from "@/components/OwnerShell";
@@ -13,20 +13,19 @@ export default function OwnerJobsPage() {
   const [loading, setLoading] = useState(true);
 
   // 絞り込みフィルターの選択状態
+  const [filterStatus, setFilterStatus] = useState<string>("all"); // 💡【新設】ステータス用
   const [filterJobType, setFilterJobType] = useState<string>("all");
   const [filterUrgency, setFilterUrgency] = useState<string>("all");
 
-  // 💡カスタムモーダルポップアップ用の状態管理
+  // カスタムモーダルポップアップ用の状態管理
   const [modalOpen, setModalOpen] = useState(false);
   const [targetJob, setTargetJob] = useState<{ id: string; title: string } | null>(null);
 
-  // 💡【最重要変更】ownerId の属人化ロックを完全解除し、システム共有の案件を一括取得
+  // 案件を一括取得（ownerId制限なしの完全共有版）
   const fetchOwnerJobs = async () => {
     setLoading(true);
     try {
-      // 🔒「where ownerId == userId」を撤去し、全員で共有する system_shared_owner の案件をすべてロード！
-      // これにより、別のオーナーアカウントが起票・複製した案件も全員のダッシュボードに100%リアルタイム共有されます。
-      const q = query(collection(db, "jobs"), where("ownerId", "==", "system_shared_owner"));
+      const q = query(collection(db, "jobs"));
       const snap = await getDocs(q);
       
       const jobList = snap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
@@ -57,7 +56,6 @@ export default function OwnerJobsPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // 💡認証が通ったら、個人のUIDではなく、共通共有エリアからデータを引っ張る
         fetchOwnerJobs();
       } else {
         setLoading(false);
@@ -66,20 +64,27 @@ export default function OwnerJobsPage() {
     return () => unsubscribe();
   }, []);
 
-  // フィルター連動
+  // 💡フィルター連動（トリプル掛け対応）
   useEffect(() => {
     let result = [...allJobs];
 
+    // 1. ステータスでの絞り込み
+    if (filterStatus !== "all") {
+      result = result.filter(job => job.status === filterStatus);
+    }
+
+    // 2. 仕事種別での絞り込み
     if (filterJobType !== "all") {
       result = result.filter(job => job.jobType === filterJobType);
     }
 
+    // 3. 緊急度での絞り込み
     if (filterUrgency !== "all") {
       result = result.filter(job => job.urgency === filterUrgency);
     }
 
     setFilteredJobs(result);
-  }, [filterJobType, filterUrgency, allJobs]);
+  }, [filterStatus, filterJobType, filterUrgency, allJobs]);
 
   // モーダルを起動する窓口
   const triggerDeleteModal = (jobId: string, title: string) => {
@@ -87,7 +92,7 @@ export default function OwnerJobsPage() {
     setModalOpen(true);
   };
 
-  // 💡【確定処理】カスタムモーダル内から実行される完全削除ロジック
+  // 【確定処理】カスタムモーダル内から実行される完全削除ロジック
   const handleConfirmDelete = async () => {
     if (!targetJob) return;
     setModalOpen(false);
@@ -137,7 +142,23 @@ export default function OwnerJobsPage() {
               表示件数: <span className="text-lg text-[#0082C8] font-black">{filteredJobs.length}</span> / {allJobs.length} 件
             </div>
 
+            {/* 💡【新設】ステータスフィルター */}
             <div className="flex items-center gap-2 border-l-2 border-slate-300 pl-4">
+              <label className="font-black text-slate-500">ステータス:</label>
+              <select 
+                value={filterStatus} 
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#0082C8]"
+              >
+                <option value="all">すべて表示</option>
+                <option value="draft">📁 下書き</option>
+                <option value="open">🟢 募集中</option>
+                <option value="working">🔵 進行中</option>
+                <option value="review">🟡 検収待ち</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-2">
               <label className="font-black text-slate-500">仕事種別:</label>
               <select 
                 value={filterJobType} 
@@ -150,7 +171,7 @@ export default function OwnerJobsPage() {
               </select>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-2">
               <label className="font-black text-slate-500">緊急度:</label>
               <select 
                 value={filterUrgency} 
@@ -179,7 +200,8 @@ export default function OwnerJobsPage() {
             <table className="w-full text-left border-collapse table-auto text-xs">
               <thead className="bg-slate-100 border-b-2 border-slate-300 text-slate-700 font-black">
                 <tr>
-                  <th className="p-3 border-r border-slate-300 w-24">状態</th>
+                  {/* 💡 文言を「状態」→「ステータス」へ変更 */}
+                  <th className="p-3 border-r border-slate-300 w-24">ステータス</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
                   <th className="p-3 border-r border-slate-300 w-28">仕事種別</th>
                   <th className="p-3 border-r border-slate-300">案件タイトル</th>
@@ -197,7 +219,7 @@ export default function OwnerJobsPage() {
                   return (
                     <tr key={job.id} className="hover:bg-slate-50 transition-colors">
                       
-                      {/* 状態 */}
+                      {/* ステータス */}
                       <td className="p-3 border-r border-slate-200">
                         <span className={`px-2 py-0.5 border text-[10px] font-black rounded block text-center uppercase ${
                           job.status === 'open' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
