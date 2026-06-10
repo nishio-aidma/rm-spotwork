@@ -11,6 +11,9 @@ export default function WorkerMyJobsPage() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // 💡【新設】現在アクティブなタブを管理するステート ('active': 稼働中 / 'review': 検収待ち)
+  const [activeTab, setActiveTab] = useState<'active' | 'review'>('active');
+
   const fetchMyJobs = async (userId: string) => {
     setLoading(true);
     try {
@@ -57,6 +60,21 @@ export default function WorkerMyJobsPage() {
     return `${h}h ${m}m`;
   };
 
+  // 💡【新設】タブの切り替えロジック
+  // 'active' ➔ 受諾済み(assigned), 計測中(working), 一時停止(paused)
+  // 'review' ➔ 検収待ち(review)
+  const filteredJobs = jobs.filter((job) => {
+    if (activeTab === 'active') {
+      return job.status === 'assigned' || job.status === 'working' || job.status === 'paused';
+    } else {
+      return job.status === 'review';
+    }
+  });
+
+  // 各タブの件数をリアルタイム集計してバッジに表示
+  const activeCount = jobs.filter(j => j.status === 'assigned' || j.status === 'working' || j.status === 'paused').length;
+  const reviewCount = jobs.filter(j => j.status === 'review').length;
+
   if (loading) return <WorkerShell title="進行中のタスク"><div className="p-10 text-center text-slate-400 text-xs font-bold">マイタスクを照合中...</div></WorkerShell>;
 
   return (
@@ -64,9 +82,41 @@ export default function WorkerMyJobsPage() {
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
         {/* 上部サマリーカウンター */}
-        <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm">
+        <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="text-sm font-black text-slate-700">
             現在の抱え中タスク総数: <span className="text-lg text-[#0082C8] font-black">{jobs.length}</span> 件
+          </div>
+
+          {/* 💡【新設】現場特化型：スタイリッシュ切り替えタブ */}
+          <div className="flex bg-slate-100 p-1 rounded border border-slate-300 gap-1 self-start sm:self-auto select-none">
+            <button
+              type="button"
+              onClick={() => setActiveTab('active')}
+              className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-2 ${
+                activeTab === 'active'
+                  ? 'bg-[#0082C8] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
+            >
+              🚀 作業中・未完了
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'active' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
+                {activeCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('review')}
+              className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-2 ${
+                activeTab === 'review'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
+            >
+              ⌛ 報告済み・検収待ち
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'review' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
+                {reviewCount}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -87,7 +137,7 @@ export default function WorkerMyJobsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 font-medium text-slate-800 bg-white">
-                {jobs.map((job) => (
+                {filteredJobs.map((job) => (
                   <tr key={job.id} className="hover:bg-slate-50 transition-colors">
                     
                     {/* 現在のステータスバッジ */}
@@ -116,13 +166,13 @@ export default function WorkerMyJobsPage() {
                     </td>
 
                     {/* 仕事種別 */}
-                    <td className="p-3 border-r border-slate-200">
+                    <td className="p-3 border-r border-slate-300">
                       <span className="bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded text-[11px] font-bold block text-center">
                         {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト作成'}
                       </span>
                     </td>
 
-                    {/* ★大改造：案件名（タイトル）をクリックしても詳細・タイマー画面へ進めるようにLink化 */}
+                    {/* 案件名 */}
                     <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate max-w-xs" title={job.title}>
                       <Link 
                         href={`/worker/jobs/${job.id}`} 
@@ -160,9 +210,11 @@ export default function WorkerMyJobsPage() {
             </table>
           </div>
 
-          {jobs.length === 0 && (
+          {filteredJobs.length === 0 && (
             <div className="p-16 text-center text-slate-400 italic text-xs font-medium bg-slate-50">
-              現在、進行中のタスクはありません。「案件を探す」から引き受けてください。
+              {activeTab === 'active' 
+                ? "現在、作業中・未完了のタスクはありません。" 
+                : "提出済みの検収待ちタスクはありません。"}
             </div>
           )}
         </div>

@@ -24,6 +24,9 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   // 💡どのアクション（下書き戻し / 検収承認 / 公開）を呼ぶかを識別するステート
   const [modalType, setModalType] = useState<"draft" | "approve" | "publish" | null>(null);
 
+  // 💡【新設】コピー完了通知用のポップステート
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
   useEffect(() => {
     async function fetchJob() {
       if (!id || !user) return;
@@ -48,6 +51,15 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     const m = Math.floor((s % 3600) / 60);
     const sec = s % 60;
     return `${h}h ${m}m ${sec}s`;
+  };
+
+  // 💡【新設】クリップボードへの一撃コピー関数
+  const handleCopyToClipboard = (text: string, fieldName: string) => {
+    if (!text || text === "-") return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedField(fieldName);
+      setTimeout(() => setCopiedField(null), 1000); // 1秒後にフワッと消す
+    }).catch(err => console.error("コピーに失敗しました:", err));
   };
 
   // MEMBERSチャットグループへ案件公開の自動通知を撃ち込む関数
@@ -76,7 +88,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       }
 
       const jobUrl = `https://rm-spotwork.vercel.app/owner/jobs/${targetJob.id}`;
-      // 💡通知メッセージの文言も「コピー」へスマートに修正
       const jobTypeName = targetJob.jobType === "form_posting" ? "✉️ フォーム投稿" : "📋 リスト作成";
 
       const messageBody = `🚀 【案件公開通知】新しい案件が公開されました！\n\n【案件タイトル】 ${targetJob.title || "未設定"}\n【仕事種別】 ${jobTypeName}\n【SCクライアント】 ${targetJob.scClient || "-"}\n【予定作業件数】 ${targetJob.count || 0} 件\n【指定納期】 ${targetJob.deadline || "未設定"}\n\n👇 案件の詳細確認・受諾はこちらから！\n${jobUrl}`;
@@ -121,7 +132,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           updatedAt: serverTimestamp()
         });
         setJob((prev: any) => ({ ...prev, status: "draft" }));
-        // 💡 Windowsデフォルトのアラートを完全追放し、裏で処理が完了するように変更（必要に応じてモダン通知コンポーネントを導入可能ですが、現状は体験を阻害しないフラットな確定処理にします）
       } 
       
       else if (action === "approve") {
@@ -151,7 +161,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     }
   };
 
-  // 💡【文言修正】末尾の付与文字列を「_複製」から「_コピー」へと修正
   const handleDuplicateJob = (isEditMode: boolean = false) => {
     if (!job) return;
     try {
@@ -206,15 +215,54 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           </div>
 
-          <div className="bg-white border-2 border-slate-300 rounded p-4 shadow-sm">
+          {/* 💡【修正】案件タイトルのコピーボタン実装 */}
+          <div className="bg-white border-2 border-slate-300 rounded p-4 shadow-sm relative group">
             <span className="text-[9px] font-mono text-slate-400 font-black block mb-1">JOB TITLE</span>
-            <h1 className="text-base font-black tracking-tight text-slate-950 leading-snug">{job.title}</h1>
+            <div className="flex items-start justify-between gap-4">
+              <h1 className="text-base font-black tracking-tight text-slate-950 leading-snug flex-1">{job.title}</h1>
+              <div className="relative shrink-0 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => handleCopyToClipboard(job.title, "title")}
+                  className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded p-1 text-[11px] font-bold transition-all shadow-sm flex items-center gap-1 active:scale-95"
+                  title="タイトルをコピー"
+                >
+                  📋 <span className="text-[9px] font-black text-slate-600">COPY</span>
+                </button>
+                {copiedField === "title" && (
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 bg-slate-950 text-white text-[9px] font-black px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-fade-in-down">
+                    コピーしました！
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 bg-white border-2 border-slate-300 rounded overflow-hidden divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-300 shadow-sm">
-            <div className="p-3 flex flex-col justify-between min-h-[64px]">
+            
+            {/* 💡【修正】SCクライアント名のコピーボタン実装 */}
+            <div className="p-3 flex flex-col justify-between min-h-[64px] relative group">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント名</span>
-              <p className="text-xs font-black text-slate-900 truncate mt-1">{job.scClient || "-"}</p>
+              <div className="flex items-center justify-between gap-2 mt-1 w-full">
+                <p className="text-xs font-black text-slate-900 truncate flex-1">{job.scClient || "-"}</p>
+                {job.scClient && job.scClient !== "-" && (
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyToClipboard(job.scClient, "scClient")}
+                      className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded px-1.5 py-0.5 text-[9px] font-black transition-all active:scale-95"
+                      title="クライアント名をコピー"
+                    >
+                      📋
+                    </button>
+                    {copiedField === "scClient" && (
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 bg-slate-950 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-md whitespace-nowrap">
+                        コピー完了！
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             
             <div className="p-3 flex flex-col justify-between min-h-[64px]">
@@ -333,7 +381,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
-                {/* 💡【文言統一】ボタン名を「コピー」へ変更 */}
                 <button 
                   type="button"
                   onClick={() => handleDuplicateJob(false)}

@@ -26,6 +26,9 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [modalMessage, setModalMessage] = useState("");
   const [modalActionType, setModalActionType] = useState<"accept" | "start" | "pause" | "complete" | null>(null);
 
+  // 💡【新設】コピー完了通知用のポップステート
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
   // 初期データの取得
   useEffect(() => {
     async function fetchData() {
@@ -66,6 +69,15 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     const m = String(date.getMinutes()).padStart(2, "0");
     const s = String(date.getSeconds()).padStart(2, "0");
     return `${h}:${m}:${s}`;
+  };
+
+  // 💡【新設】クリップボードへの一撃コピー関数
+  const handleCopyToClipboard = (text: string, fieldName: string) => {
+    if (!text || text === "-") return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedField(fieldName);
+      setTimeout(() => setCopiedField(null), 1000); // 1秒後に自動で消す
+    }).catch(err => console.error("コピー失敗:", err));
   };
 
   const handleToggleWish = async () => {
@@ -245,8 +257,26 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </div>
           </div>
 
-          <div className="bg-white border-2 border-slate-300 rounded p-4 shadow-sm">
-            <h1 className="text-base font-black tracking-tight text-slate-950 leading-snug">{job.title}</h1>
+          {/* 💡【修正】ワーカー側：案件タイトルのコピーボタン実装 */}
+          <div className="bg-white border-2 border-slate-300 rounded p-4 shadow-sm relative group">
+            <div className="flex items-start justify-between gap-4">
+              <h1 className="text-base font-black tracking-tight text-slate-950 leading-snug flex-1">{job.title}</h1>
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleCopyToClipboard(job.title, "title")}
+                  className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded p-1 text-[10px] font-black transition-all shadow-sm flex items-center gap-1 active:scale-95"
+                  title="タイトルをコピー"
+                >
+                  📋 <span className="text-[9px] text-slate-600 font-black">COPY</span>
+                </button>
+                {copiedField === "title" && (
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 bg-slate-950 text-white text-[9px] font-black px-2 py-0.5 rounded shadow-md whitespace-nowrap">
+                    コピーしました！
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-4 bg-white border-2 border-slate-300 rounded overflow-hidden divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-300 shadow-sm">
@@ -259,10 +289,32 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                 <a href="https://sales-crowd.jp/" target="_blank" rel="noopener noreferrer" className="bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-black px-2 py-1 rounded transition-colors shadow-sm whitespace-nowrap">開く ↗</a>
               </div>
             </div>
-            <div className="p-3 flex flex-col justify-between min-h-[72px]">
+
+            {/* 💡【修正】ワーカー側：SCクライアント名のコピーボタン実装 */}
+            <div className="p-3 flex flex-col justify-between min-h-[72px] relative group">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント</span>
-              <p className="text-xs font-black text-slate-900 truncate mt-auto">{job.scClient || "-"}</p>
+              <div className="flex items-center justify-between gap-2 mt-auto w-full">
+                <p className="text-xs font-black text-slate-900 truncate flex-1">{job.scClient || "-"}</p>
+                {job.scClient && job.scClient !== "-" && (
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyToClipboard(job.scClient, "scClient")}
+                      className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded px-1.5 py-0.5 text-[9px] font-black transition-all active:scale-95"
+                      title="クライアント名をコピー"
+                    >
+                      📋
+                    </button>
+                    {copiedField === "scClient" && (
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 bg-slate-950 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-md whitespace-nowrap">
+                        コピー完了！
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
+
             <div className="p-3 flex flex-col justify-between min-h-[72px]">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
                 {job.jobType === 'form_posting' ? '入力情報' : '入力項目'}
@@ -445,7 +497,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
       </div>
 
-      {/* 💡【超シンプル化リフォーム】案件詳細ページのモーダルもダサい4重フチ線を全撤去しモダンフラットに！ */}
+      {/* シンプルモダンデザインモーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">

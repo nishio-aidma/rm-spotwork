@@ -84,7 +84,7 @@ export default function WorkerDashboard() {
           return createdDate >= threeDaysAgo;
         });
 
-        // 💡【ロジック変更】新着案件を「期日（deadline）が近い順」に並び替えます
+        // 新着案件を「期日（deadline）が近い順」に並び替えます
         // 未設定のものは遠い未来（9999年）として扱い、一番下に沈める安全弁を搭載
         filteredNewJobs.sort((a: any, b: any) => {
           const deadlineA = a.deadline && typeof a.deadline === "string" && a.deadline.trim() !== "" ? a.deadline : "9999-12-31";
@@ -112,7 +112,7 @@ export default function WorkerDashboard() {
       <div className="max-w-full mx-auto space-y-4">
         
         {/* =========================================================================
-            ✅【もともとの仕様】メイン実績エリア（左右2分割のグリッド配置）
+            ✅ メイン実績エリア（左右2分割のグリッド配置）
             ========================================================================= */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           
@@ -173,7 +173,7 @@ export default function WorkerDashboard() {
             </div>
           </div>
 
-          {/* 【右側エリア：5マス分】最近の活動履歴（レシート風リスト） */}
+          {/* 【右側エリア：5マス分】最近の活動履歴 */}
           <div className="lg:col-span-5">
             <div className="bg-white border-2 border-slate-300 rounded shadow-sm flex flex-col h-full">
               <div className="bg-slate-100 p-3 border-b border-slate-300 flex justify-between items-center">
@@ -214,7 +214,7 @@ export default function WorkerDashboard() {
 
 
         {/* =========================================================================
-            ✨【新着案件コーナー】スリムリスト形式 ＋「期日：」文字追加 ＋ 期日順ソート
+            ✨【新着案件コーナー】スリムリスト形式 ＋ 「緊急度」を追加
             ========================================================================= */}
         <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden">
           
@@ -233,20 +233,27 @@ export default function WorkerDashboard() {
               newJobs.map((job) => (
                 <div key={job.id} className="p-3 hover:bg-slate-50 flex items-center justify-between gap-3 transition-colors text-xs font-medium">
                   
-                  {/* 左側：種別バッジ ＆ 案件名タイトル */}
+                  {/* 左側：種別バッジ ＆ 緊急度バッジ ＆ 案件名タイトル */}
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="bg-slate-100 border border-slate-300 text-[10px] font-bold px-1.5 py-0.5 rounded text-slate-600 whitespace-nowrap flex-shrink-0">
                       {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト'}
                     </span>
-                    <div className="font-black text-slate-900 truncate" title={job.title}>
+                    
+                    {/* 💡【新設】緊急度のバッジ化（通常・高め・至急をカラーで完全出し分け） */}
+                    {job.urgency === "3" ? (
+                      <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0">至急</span>
+                    ) : job.urgency === "2" ? (
+                      <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0">高め</span>
+                    ) : (
+                      <span className="bg-slate-50 text-slate-500 border border-slate-200 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase flex-shrink-0">通常</span>
+                    )}
+
+                    <div className="font-black text-slate-900 truncate pl-1" title={job.title}>
                       {job.title}
                     </div>
-                    {job.urgency === "3" && (
-                      <span className="bg-rose-50 border border-rose-200 text-rose-700 text-[9px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0">至急</span>
-                    )}
                   </div>
                   
-                  {/* 右側：💡「期日：」の文字を親切に追加 ＆ 詳細リンク */}
+                  {/* 右側：「期日：」の文字表示 ＆ 詳細リンク */}
                   <div className="flex items-center gap-4 flex-shrink-0">
                     <span className="text-[11px] text-slate-500 font-mono">
                       ⏳ 期日：{job.deadline || "未設定"}
