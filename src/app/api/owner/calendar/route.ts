@@ -11,29 +11,40 @@ export async function POST(request: Request) {
       return NextResponse.json({ events: [] });
     }
 
-    // 💡【環境変数不要の完全自動読み込みハック】
-    // 左側に配置されているJSON鍵ファイルをシステムが直接読み込むため、コピペのズレが200%起きません。
-    const jsonPath = path.join(process.cwd(), "my-gyomu-app-firebase-adminsdk-fbsvc-b6ab302292.json");
-    
-    if (!fs.existsSync(jsonPath)) {
-      console.error(`❌ 認証JSONファイルが見つかりません。配置パス: ${jsonPath}`);
-      return NextResponse.json({ error: "認証用JSONファイルがルートに配置されていません" }, { status: 500 });
+    let clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+
+    // 本番環境（Vercel）の環境変数が設定されていない場合のみ、ローカルのJSONファイルを読みに行きます
+    if (!clientEmail || !privateKey) {
+      const jsonPath = path.join(process.cwd(), "my-gyomu-app-firebase-adminsdk-fbsvc-b6ab302292.json");
+      
+      if (fs.existsSync(jsonPath)) {
+        const credentials = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+        clientEmail = credentials.client_email;
+        privateKey = credentials.private_key;
+      }
     }
 
-    // JSONファイルを直接パース
-    const credentials = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+    if (!privateKey || !clientEmail) {
+      console.error("❌ Google Calendar Credentials missing.");
+      return NextResponse.json({ error: "API設定（認証情報）が不足しています" }, { status: 500 });
+    }
+
+    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+      privateKey = privateKey.slice(1, -1);
+    }
+    const formattedKey = privateKey.replace(/\\n/g, "\n");
 
     const auth = new google.auth.JWT({
-      email: credentials.client_email,
-      key: credentials.private_key,
+      email: clientEmail,
+      key: formattedKey,
       scopes: ["https://www.googleapis.com/auth/calendar.readonly"]
     });
 
-    // Google認証の事前チェック
     try {
       await auth.authorize();
     } catch (authErr: any) {
-      console.error("❌ Google認証に失敗しました。JSONファイルの中身を確認してください:", authErr.message);
+      console.error("❌ Google認証に失敗しました:", authErr.message);
       return NextResponse.json({ error: "Google認証に失敗しました" }, { status: 401 });
     }
 
@@ -56,7 +67,6 @@ export async function POST(request: Request) {
 
           events.forEach((event: any) => {
             const summary = event.summary || "";
-            // タイトルに「RM業務」が含まれていれば前後不問で全自動検知（部分一致）
             if (summary.includes("RM業務")) {
               const startStr = event.start?.dateTime || event.start?.date || "";
               const endStr = event.end?.dateTime || event.end?.date || "";
@@ -65,7 +75,7 @@ export async function POST(request: Request) {
                 const startDate = new Date(startStr);
                 const endDate = new Date(endStr);
                 
-                const dateKey = startStr.split("T")[0]; // YYYY-MM-DD
+                const dateKey = startStr.split("T")[0];
                 const startTimeStr = String(startDate.getHours()).padStart(2, "0") + ":" + String(startDate.getMinutes()).padStart(2, "0");
                 const endTimeStr = String(endDate.getHours()).padStart(2, "0") + ":" + String(endDate.getMinutes()).padStart(2, "0");
 
