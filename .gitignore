@@ -39,3 +39,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+my-gyomu-app-firebase-adminsdk-fbsvc-b6ab302292.json
