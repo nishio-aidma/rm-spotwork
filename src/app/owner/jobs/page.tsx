@@ -25,14 +25,34 @@ export default function OwnerJobsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [targetJob, setTargetJob] = useState<{ id: string; title: string } | null>(null);
 
-  // 案件を一括取得（ownerId制限なしの完全共有版）
+  // 今日の日付文字列（YYYY-MM-DD）を取得するヘルパー関数
+  const getTodayStr = () => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    const d = String(today.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+
+  // 案件を一括取得
   const fetchOwnerJobs = async () => {
     setLoading(true);
     try {
       const q = query(collection(db, "jobs"));
       const snap = await getDocs(q);
+      const todayStr = getTodayStr();
       
-      const jobList = snap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
+      const jobList = snap.docs.map(d => {
+        const data = d.data() as any;
+        let currentStatus = data.status || "draft";
+
+        // 募集中のまま期日が今日を過ぎていたら、動的に「期限切れ」として扱う自動仕分けインフラ
+        if (currentStatus === "open" && data.deadline && data.deadline < todayStr) {
+          currentStatus = "expired";
+        }
+
+        return { id: d.id, ...data, status: currentStatus };
+      });
       
       // 【期日（deadline）が近い順】に並び替え
       jobList.sort((a: any, b: any) => {
@@ -74,7 +94,7 @@ export default function OwnerJobsPage() {
 
     // 1. 3大分類タブでのプライマリフィルタリング
     if (activeTab === "recruiting") {
-      result = result.filter(job => job.status === "open" || job.status === "draft");
+      result = result.filter(job => job.status === "open" || job.status === "draft" || job.status === "expired");
     } else if (activeTab === "working") {
       result = result.filter(job => job.status === "assigned" || job.status === "working" || job.status === "paused");
     } else if (activeTab === "completed") {
@@ -99,24 +119,20 @@ export default function OwnerJobsPage() {
     setFilteredJobs(result);
   }, [activeTab, filterStatus, filterJobType, filterUrgency, allJobs]);
 
-  // タブ切り替え時に矛盾を防ぐためステータス詳細フィルターを一度リセット
   const handleTabChange = (tab: 'recruiting' | 'working' | 'completed') => {
     setActiveTab(tab);
     setFilterStatus("all");
   };
 
-  // 各フェーズの件数をリアルタイム自動集計
-  const recruitingCount = allJobs.filter(j => j.status === "open" || j.status === "draft").length;
+  const recruitingCount = allJobs.filter(j => j.status === "open" || j.status === "draft" || j.status === "expired").length;
   const workingCount = allJobs.filter(j => j.status === "assigned" || j.status === "working" || j.status === "paused").length;
   const completedCount = allJobs.filter(j => j.status === "review" || j.status === "completed").length;
 
-  // モーダルを起動する窓口
   const triggerDeleteModal = (jobId: string, title: string) => {
     setTargetJob({ id: jobId, title });
     setModalOpen(true);
   };
 
-  // 【確定処理】カスタムモーダル内から実行される完全削除ロジック
   const handleConfirmDelete = async () => {
     if (!targetJob) return;
     setModalOpen(false);
@@ -132,7 +148,6 @@ export default function OwnerJobsPage() {
     }
   };
 
-  // 【今週締め切り判定関数】
   const isThisWeekDeadline = (deadlineStr: string) => {
     if (!deadlineStr || typeof deadlineStr !== "string" || deadlineStr.trim() === "") return false;
     
@@ -213,7 +228,7 @@ export default function OwnerJobsPage() {
 
             {/* ステータス詳細フィルター */}
             <div className="flex items-center gap-2 border-l xl:border-l-2 border-slate-300 pl-2 xl:pl-4">
-              <label className="font-black text-slate-500">詳細状況:</label>
+              <label className="font-black text-slate-500">ステータス:</label>
               <select 
                 value={filterStatus} 
                 onChange={(e) => setFilterStatus(e.target.value)}
@@ -224,6 +239,7 @@ export default function OwnerJobsPage() {
                   <>
                     <option value="draft">📁 下書き</option>
                     <option value="open">🟢 募集中</option>
+                    <option value="expired">⏳ 期限切れ</option>
                   </>
                 )}
                 {activeTab === 'working' && (
@@ -307,6 +323,7 @@ export default function OwnerJobsPage() {
                         <span className={`px-2 py-0.5 border text-[10px] font-black rounded block text-center uppercase ${
                           job.status === 'open' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
                           job.status === 'draft' ? 'bg-slate-100 text-slate-500 border-slate-300' :
+                          job.status === 'expired' ? 'bg-red-100 text-red-800 border-red-300 font-extrabold' : 
                           job.status === 'assigned' ? 'bg-blue-50 text-blue-700 border-blue-300' :
                           job.status === 'working' ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse' :
                           job.status === 'paused' ? 'bg-amber-50 text-amber-700 border-amber-300' :
@@ -316,6 +333,7 @@ export default function OwnerJobsPage() {
                         }`}>
                           {job.status === 'open' ? '募集中' : 
                            job.status === 'draft' ? '下書き' : 
+                           job.status === 'expired' ? '期限切れ' : 
                            job.status === 'assigned' ? '受諾済み' : 
                            job.status === 'working' ? '進行中' : 
                            job.status === 'paused' ? '一時停止' : 
@@ -395,8 +413,8 @@ export default function OwnerJobsPage() {
 
           {filteredJobs.length === 0 && (
             <div className="p-16 text-center text-slate-400 italic font-medium bg-slate-50">
-              {activeTab === 'recruiting' && "該当する募集中・下書きの案件はありません。"}
-              {activeTab === 'working' && "該当するワーカー請負中・稼働中の案件はありません。"}
+              {activeTab === 'recruiting' && "該当する募集中・下書き・期限切れの案件はありません。"}
+              {activeTab === 'working' && "該当するワーカー請割中・稼働中の案件はありません。"}
               {activeTab === 'completed' && "該当する納品済・完了の案件はありません。"}
             </div>
           )}
@@ -404,7 +422,7 @@ export default function OwnerJobsPage() {
 
       </div>
 
-      {/* カスタム確認ポップアップ（モーダル） */}
+      {/* カスタム確認ポップアップ */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
@@ -433,7 +451,6 @@ export default function OwnerJobsPage() {
               >
                 キャンセル
               </button>
-              {/* 💡【タイポ修正完了】await を除去し、正しい onClick 属性に修正 */}
               <button
                 type="button"
                 onClick={handleConfirmDelete}
