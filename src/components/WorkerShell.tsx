@@ -33,12 +33,21 @@ export default function WorkerShell({ children, title, subTitle }: { children: R
   return (
     <div className="min-h-screen bg-[#F0F2F5] flex flex-col font-sans antialiased text-slate-900 select-none">
       
-      {/* 1. 上部ヘッダー：オーナー側と統一した鮮やかなブルーを採用 */}
+      {/* 1. 上部ヘッダー：システム名「すきわーく」のロゴ風デザインをドッキング */}
       <header className="h-14 bg-[#0082C8] flex items-center px-4 justify-between text-white shadow-sm z-10 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="bg-white/20 px-2.5 py-1 rounded font-black text-xs tracking-wider">WORKER</div>
-          <h1 className="text-sm font-bold tracking-tight">{title} <span className="text-white/60 font-normal text-xs">{subTitle}</span></h1>
+        <div className="flex items-center gap-4">
+          {/* 💡【新設】ちょいっと隙間におしごと すきわーく ロゴインフラ */}
+          <div className="flex flex-col justify-center border-r border-white/20 pr-4 select-none">
+            <span className="text-[8px] font-medium tracking-widest text-white/80 leading-none mb-0.5">ちょいっと隙間におしごと</span>
+            <span className="text-sm font-black tracking-tight leading-none text-white drop-shadow-sm">すきわーく</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 px-2.5 py-1 rounded font-black text-xs tracking-wider">WORKER</div>
+            <h1 className="text-sm font-bold tracking-tight">{title} <span className="text-white/60 font-normal text-xs">{subTitle}</span></h1>
+          </div>
         </div>
+        
         {/* スイッチ（isLoggingOut）の状態に合わせて表示とロックを切り替え */}
         <button 
           onClick={handleSignOut}
