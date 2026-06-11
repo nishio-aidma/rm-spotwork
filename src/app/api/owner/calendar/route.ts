@@ -14,7 +14,6 @@ export async function POST(request: Request) {
     let clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     let privateKey = process.env.GOOGLE_PRIVATE_KEY;
 
-    // 本番環境（Vercel）の環境変数が設定されていない場合のみ、ローカルのJSONファイルを読みに行きます
     if (!clientEmail || !privateKey) {
       const jsonPath = path.join(process.cwd(), "my-gyomu-app-firebase-adminsdk-fbsvc-b6ab302292.json");
       
@@ -75,9 +74,15 @@ export async function POST(request: Request) {
                 const startDate = new Date(startStr);
                 const endDate = new Date(endStr);
                 
-                const dateKey = startStr.split("T")[0];
-                const startTimeStr = String(startDate.getHours()).padStart(2, "0") + ":" + String(startDate.getMinutes()).padStart(2, "0");
-                const endTimeStr = String(endDate.getHours()).padStart(2, "0") + ":" + String(endDate.getMinutes()).padStart(2, "0");
+                // 💡【ここを徹底強化！】
+                // Vercelサーバーがアメリカにあろうがどこにあろうが、100%強制的に日本時間（JST）の時計オブジェクトへ変換します
+                const jstStart = new Date(startDate.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+                const jstEnd = new Date(endDate.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+
+                // 日付と時間を日本時間基準で美しく切り出し
+                const dateKey = `${jstStart.getFullYear()}-${String(jstStart.getMonth() + 1).padStart(2, "0")}-${String(jstStart.getDate()).padStart(2, "0")}`;
+                const startTimeStr = String(jstStart.getHours()).padStart(2, "0") + ":" + String(jstStart.getMinutes()).padStart(2, "0");
+                const endTimeStr = String(jstEnd.getHours()).padStart(2, "0") + ":" + String(jstEnd.getMinutes()).padStart(2, "0");
 
                 consolidatedEvents.push({
                   workerEmail: email,
