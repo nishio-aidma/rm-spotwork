@@ -1,7 +1,6 @@
 "use client";
 
-import { ReactNode, useState } from "react"; // 状態を覚えるための useState を追加
-import Link from "next/navigation";
+import { ReactNode, useState } from "react";
 import { usePathname } from "next/navigation";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -37,16 +36,19 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
   return (
     <div className="min-h-screen bg-[#F0F2F5] flex flex-col font-sans antialiased text-slate-900 select-none">
       
-      {/* 1. 上部ヘッダー：枠を埋めて文字を大きく目立たせた超視認性ロゴをドッキング */}
+      {/* 上部ヘッダー */}
       <header className="h-14 bg-[#0082C8] flex items-center px-4 justify-between text-white shadow-sm z-10 flex-shrink-0">
         <div className="flex items-center gap-4">
           
-          {/* 💡【デザイン進化】白背景の角丸枠で包み、文字を大きくして視認性をMAXに高めた新ロゴ */}
-          <div className="bg-white/15 px-3 py-1 rounded border border-white/20 flex flex-col justify-center select-none shadow-inner">
-            <span className="text-[9px] font-black tracking-wider text-white/90 leading-none mb-1">ちょいっと隙間におしごと</span>
-            <span className="text-base font-black tracking-wide leading-none text-white drop-shadow-md">
-              すきわ～く
-            </span>
+          {/* 💡【プロ仕様ロゴリフォーム】高級感のあるエンブレム座布団とシンボルマークのドッキング */}
+          <div className="bg-gradient-to-br from-white/18 to-white/4 px-3 py-1 rounded-md border border-white/25 flex items-center gap-2 select-none shadow-inner backdrop-blur-xs">
+            <span className="text-xl filter drop-shadow-sm leading-none animate-pulse">⏱️</span>
+            <div className="flex flex-col justify-center">
+              <span className="text-[8px] font-black tracking-widest text-white/90 leading-none mb-0.5 uppercase">ちょいっと隙間におしごと</span>
+              <span className="text-sm font-black tracking-wide leading-none text-white bg-clip-text bg-gradient-to-r from-white to-slate-100 drop-shadow-md">
+                すきわ～く<span className="text-[10px] text-white/80 font-bold ml-0.5">✨</span>
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 border-l border-white/20 pl-4 h-8">
@@ -64,7 +66,7 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
         </button>
       </header>
 
-      {/* 2. 下部メインエリア */}
+      {/* 下部メインエリア */}
       <div className="flex-1 flex min-h-0">
         <aside className="w-20 bg-[#E8EAEF] border-r border-slate-300 flex flex-col flex-shrink-0">
           <nav className="flex-1 p-1 space-y-1">

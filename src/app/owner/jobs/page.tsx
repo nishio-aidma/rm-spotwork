@@ -12,8 +12,12 @@ export default function OwnerJobsPage() {
   const [filteredJobs, setFilteredJobs] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
+  // 現在アクティブな大分類タブを管理するステート
+  // 'recruiting': 募集中・下書き / 'working': 請負中・稼働中 / 'completed': 納品済・完了
+  const [activeTab, setActiveTab] = useState<'recruiting' | 'working' | 'completed'>('recruiting');
+
   // 絞り込みフィルターの選択状態
-  const [filterStatus, setFilterStatus] = useState<string>("all"); // 💡【新設】ステータス用
+  const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterJobType, setFilterJobType] = useState<string>("all");
   const [filterUrgency, setFilterUrgency] = useState<string>("all");
 
@@ -64,27 +68,47 @@ export default function OwnerJobsPage() {
     return () => unsubscribe();
   }, []);
 
-  // 💡フィルター連動（トリプル掛け対応）
+  // 大分類タブ ＆ トリプルフィルター掛け連動ロジック
   useEffect(() => {
     let result = [...allJobs];
 
-    // 1. ステータスでの絞り込み
+    // 1. 3大分類タブでのプライマリフィルタリング
+    if (activeTab === "recruiting") {
+      result = result.filter(job => job.status === "open" || job.status === "draft");
+    } else if (activeTab === "working") {
+      result = result.filter(job => job.status === "assigned" || job.status === "working" || job.status === "paused");
+    } else if (activeTab === "completed") {
+      result = result.filter(job => job.status === "review" || job.status === "completed");
+    }
+
+    // 2. セレクトボックスによるステータス詳細絞り込み
     if (filterStatus !== "all") {
       result = result.filter(job => job.status === filterStatus);
     }
 
-    // 2. 仕事種別での絞り込み
+    // 3. 仕事種別での絞り込み
     if (filterJobType !== "all") {
       result = result.filter(job => job.jobType === filterJobType);
     }
 
-    // 3. 緊急度での絞り込み
+    // 4. 緊急度での絞り込み
     if (filterUrgency !== "all") {
       result = result.filter(job => job.urgency === filterUrgency);
     }
 
     setFilteredJobs(result);
-  }, [filterStatus, filterJobType, filterUrgency, allJobs]);
+  }, [activeTab, filterStatus, filterJobType, filterUrgency, allJobs]);
+
+  // タブ切り替え時に矛盾を防ぐためステータス詳細フィルターを一度リセット
+  const handleTabChange = (tab: 'recruiting' | 'working' | 'completed') => {
+    setActiveTab(tab);
+    setFilterStatus("all");
+  };
+
+  // 各フェーズの件数をリアルタイム自動集計
+  const recruitingCount = allJobs.filter(j => j.status === "open" || j.status === "draft").length;
+  const workingCount = allJobs.filter(j => j.status === "assigned" || j.status === "working" || j.status === "paused").length;
+  const completedCount = allJobs.filter(j => j.status === "review" || j.status === "completed").length;
 
   // モーダルを起動する窓口
   const triggerDeleteModal = (jobId: string, title: string) => {
@@ -100,7 +124,6 @@ export default function OwnerJobsPage() {
     try {
       await deleteDoc(doc(db, "jobs", targetJob.id));
       setAllJobs(prev => prev.filter(job => job.id !== targetJob.id));
-      alert("案件を完全に削除しました。");
     } catch (e) {
       console.error(e);
       alert("削除処理に失敗しました。");
@@ -136,25 +159,86 @@ export default function OwnerJobsPage() {
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
         {/* 上部コントロールバー ＆ 絞り込みコンソール */}
-        <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div className="flex items-center gap-4 flex-wrap text-xs">
-            <div className="text-sm font-black text-slate-700">
+            <div className="text-sm font-black text-slate-700 min-w-[100px]">
               表示件数: <span className="text-lg text-[#0082C8] font-black">{filteredJobs.length}</span> / {allJobs.length} 件
             </div>
 
-            {/* 💡【新設】ステータスフィルター */}
-            <div className="flex items-center gap-2 border-l-2 border-slate-300 pl-4">
-              <label className="font-black text-slate-500">ステータス:</label>
+            {/* オーナー用 3大進捗フェーズ切り替えタブ */}
+            <div className="flex bg-slate-100 p-1 rounded border border-slate-300 gap-1 select-none">
+              <button
+                type="button"
+                onClick={() => handleTabChange('recruiting')}
+                className={`px-3 py-1.5 rounded text-[11px] font-black transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'recruiting'
+                    ? 'bg-[#0082C8] text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                }`}
+              >
+                📢 募集中
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'recruiting' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
+                  {recruitingCount}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('working')}
+                className={`px-3 py-1.5 rounded text-[11px] font-black transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'working'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                }`}
+              >
+                📥 請負中
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'working' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
+                  {workingCount}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('completed')}
+                className={`px-3 py-1.5 rounded text-[11px] font-black transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'completed'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                }`}
+              >
+                🏁 納品済
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'completed' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
+                  {completedCount}
+                </span>
+              </button>
+            </div>
+
+            {/* ステータス詳細フィルター */}
+            <div className="flex items-center gap-2 border-l xl:border-l-2 border-slate-300 pl-2 xl:pl-4">
+              <label className="font-black text-slate-500">詳細状況:</label>
               <select 
                 value={filterStatus} 
                 onChange={(e) => setFilterStatus(e.target.value)}
                 className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#0082C8]"
               >
-                <option value="all">すべて表示</option>
-                <option value="draft">📁 下書き</option>
-                <option value="open">🟢 募集中</option>
-                <option value="working">🔵 進行中</option>
-                <option value="review">🟡 検収待ち</option>
+                <option value="all">すべて</option>
+                {activeTab === 'recruiting' && (
+                  <>
+                    <option value="draft">📁 下書き</option>
+                    <option value="open">🟢 募集中</option>
+                  </>
+                )}
+                {activeTab === 'working' && (
+                  <>
+                    <option value="assigned">📥 受諾済み</option>
+                    <option value="working">🔵 進行中</option>
+                    <option value="paused">⏸️ 一時停止</option>
+                  </>
+                )}
+                {activeTab === 'completed' && (
+                  <>
+                    <option value="review">🟡 検収待ち</option>
+                    <option value="completed">🏁 完了</option>
+                  </>
+                )}
               </select>
             </div>
 
@@ -188,7 +272,7 @@ export default function OwnerJobsPage() {
 
           <Link 
             href="/owner/jobs/new"
-            className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded border border-black/10 transition-colors shadow-sm text-center whitespace-nowrap"
+            className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded border border-black/10 transition-colors shadow-sm text-center whitespace-nowrap self-start xl:self-auto"
           >
             ➕ 新規案件を作成する
           </Link>
@@ -200,7 +284,6 @@ export default function OwnerJobsPage() {
             <table className="w-full text-left border-collapse table-auto text-xs">
               <thead className="bg-slate-100 border-b-2 border-slate-300 text-slate-700 font-black">
                 <tr>
-                  {/* 💡 文言を「状態」→「ステータス」へ変更 */}
                   <th className="p-3 border-r border-slate-300 w-24">ステータス</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
                   <th className="p-3 border-r border-slate-300 w-28">仕事種別</th>
@@ -219,24 +302,30 @@ export default function OwnerJobsPage() {
                   return (
                     <tr key={job.id} className="hover:bg-slate-50 transition-colors">
                       
-                      {/* ステータス */}
+                      {/* ステータスバッジ */}
                       <td className="p-3 border-r border-slate-200">
                         <span className={`px-2 py-0.5 border text-[10px] font-black rounded block text-center uppercase ${
                           job.status === 'open' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
                           job.status === 'draft' ? 'bg-slate-100 text-slate-500 border-slate-300' :
-                          job.status === 'working' ? 'bg-blue-50 text-blue-700 border-blue-300' :
-                          job.status === 'review' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                          job.status === 'assigned' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                          job.status === 'working' ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse' :
+                          job.status === 'paused' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                          job.status === 'review' ? 'bg-orange-50 text-orange-700 border-orange-300' :
+                          job.status === 'completed' ? 'bg-slate-100 text-slate-600 border-slate-300' :
                           'bg-slate-50 text-slate-600 border-slate-200'
                         }`}>
                           {job.status === 'open' ? '募集中' : 
                            job.status === 'draft' ? '下書き' : 
+                           job.status === 'assigned' ? '受諾済み' : 
                            job.status === 'working' ? '進行中' : 
-                           job.status === 'review' ? '検収待ち' : job.status}
+                           job.status === 'paused' ? '一時停止' : 
+                           job.status === 'review' ? '検収待ち' : 
+                           job.status === 'completed' ? '完了' : job.status}
                         </span>
                       </td>
 
                       {/* 緊急度 */}
-                      <td className="p-3 border-r border-slate-200 text-center">
+                      <td className="p-3 border-r border-slate-300 text-center">
                         {job.urgency === "3" ? (
                           <span className="bg-rose-50 text-rose-700 border border-rose-300 font-black px-1.5 py-0.5 rounded text-[10px] uppercase block animate-pulse">至急</span>
                         ) : job.urgency === "2" ? (
@@ -306,7 +395,9 @@ export default function OwnerJobsPage() {
 
           {filteredJobs.length === 0 && (
             <div className="p-16 text-center text-slate-400 italic font-medium bg-slate-50">
-              該当する案件は登録されていません。
+              {activeTab === 'recruiting' && "該当する募集中・下書きの案件はありません。"}
+              {activeTab === 'working' && "該当するワーカー請負中・稼働中の案件はありません。"}
+              {activeTab === 'completed' && "該当する納品済・完了の案件はありません。"}
             </div>
           )}
         </div>
@@ -342,6 +433,7 @@ export default function OwnerJobsPage() {
               >
                 キャンセル
               </button>
+              {/* 💡【タイポ修正完了】await を除去し、正しい onClick 属性に修正 */}
               <button
                 type="button"
                 onClick={handleConfirmDelete}
