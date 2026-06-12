@@ -1,14 +1,40 @@
 "use client";
 
-import { useState } from "react";
-import { auth } from "@/lib/firebase";
-import { sendSignInLinkToEmail } from "firebase/auth";
+import { useState, useEffect } from "react"; // 💡 useEffect を追加
+import { auth, db } from "@/lib/firebase";  // 💡 db を追加
+import { sendSignInLinkToEmail, onAuthStateChanged } from "firebase/auth"; // 💡 onAuthStateChanged を追加
+import { doc, getDoc } from "firebase/firestore"; // 💡 doc, getDoc を追加
+import { useRouter } from "next/navigation";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [name, setName] = useState(""); 
   const [email, setEmail] = useState("");
-  const [isSent, setIsSent] = useState(false); // メール送信が成功したかどうかの状態
+  const [isSent, setIsSent] = useState(false); 
+  const [checkingAuth, setCheckingAuth] = useState(true); // 💡 ログインチェック中かどうかの状態
+  const router = useRouter();
+
+  // 💡【ここを新設！】2回目以降、すでにログインしているユーザーは自動でダッシュボードへジャンプさせる
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // すでにログイン状態が維持されている場合
+        try {
+          const userDoc = await getDoc(doc(db, "users", user.uid));
+          if (userDoc.exists()) {
+            const role = userDoc.data().role;
+            router.push(`/${role}/dashboard`);
+            return; // ジャンプさせたのでここで処理終了
+          }
+        } catch (err) {
+          console.error("自動ログインエラー:", err);
+        }
+      }
+      setCheckingAuth(false); // ログインしていなければ、通常の入力画面を表示する
+    });
+
+    return () => unsubscribe();
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,31 +44,36 @@ export default function AuthPage() {
         return;
       }
 
-      // 💡 リンクをクリックした時の戻り先URL（ローカル環境でも本番Vercelでも自動で対応します）
       const origin = window.location.origin;
       const actionCodeSettings = {
         url: `${origin}/login/verify`,
         handleCodeInApp: true,
       };
 
-      // 🚀 Firebaseにメールリンクの送信を要求
       await sendSignInLinkToEmail(auth, email, actionCodeSettings);
 
-      // 🔑 リンクを踏んで戻ってきた時に使うため、入力された情報をブラウザに一時保存
       window.localStorage.setItem("emailForSignIn", email);
       if (!isLogin) {
-        window.localStorage.setItem("nameForSignIn", name); // 新規登録なら名前も保存
+        window.localStorage.setItem("nameForSignIn", name);
       } else {
         window.localStorage.removeItem("nameForSignIn");
       }
 
-      setIsSent(true); // 送信完了画面に切り替え
+      setIsSent(true); 
     } catch (error: any) {
       alert("メール送信エラー: " + error.message);
     }
   };
 
-  // ✉️ メール送信が完了した後の「確認してね画面」
+  // 💡 ログインチェック中は一瞬だけ白い画面（または読み込み中）にしてチラつきを防ぐ
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+        <div className="text-xs text-slate-400 font-bold animate-pulse">Sukiwork 起動中...</div>
+      </div>
+    );
+  }
+
   if (isSent) {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4 font-sans">
@@ -63,7 +94,6 @@ export default function AuthPage() {
     );
   }
 
-  // 📝 通常の入力画面（パスワード欄は綺麗に消去済み）
   return (
     <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4 font-sans">
       <div className="max-w-sm w-full bg-white rounded-2xl shadow-2xl p-10 border border-slate-200">
