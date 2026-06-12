@@ -1,48 +1,69 @@
 "use client";
 
 import { useState } from "react";
-import { auth, db } from "@/lib/firebase";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { auth } from "@/lib/firebase";
+import { sendSignInLinkToEmail } from "firebase/auth";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
-  const [name, setName] = useState(""); // 名前用のステートを追加
+  const [name, setName] = useState(""); 
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const router = useRouter();
+  const [isSent, setIsSent] = useState(false); // メール送信が成功したかどうかの状態
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (isLogin) {
-        const userCred = await signInWithEmailAndPassword(auth, email, password);
-        const userDoc = await getDoc(doc(db, "users", userCred.user.uid));
-        if (userDoc.exists()) {
-          router.push(`/${userDoc.data().role}/dashboard`);
-        }
-      } else {
-        // 新規登録：名前がない場合はエラー
-        if (!name.trim()) {
-          alert("お名前を入力してください");
-          return;
-        }
-
-        const userCred = await createUserWithEmailAndPassword(auth, email, password);
-        await setDoc(doc(db, "users", userCred.user.uid), {
-          name: name, // 名前を保存
-          email: email,
-          role: "worker",
-          createdAt: new Date(),
-        });
-        router.push("/worker/dashboard");
+      if (!isLogin && !name.trim()) {
+        alert("お名前を入力してください");
+        return;
       }
+
+      // 💡 リンクをクリックした時の戻り先URL（ローカル環境でも本番Vercelでも自動で対応します）
+      const origin = window.location.origin;
+      const actionCodeSettings = {
+        url: `${origin}/login/verify`,
+        handleCodeInApp: true,
+      };
+
+      // 🚀 Firebaseにメールリンクの送信を要求
+      await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+
+      // 🔑 リンクを踏んで戻ってきた時に使うため、入力された情報をブラウザに一時保存
+      window.localStorage.setItem("emailForSignIn", email);
+      if (!isLogin) {
+        window.localStorage.setItem("nameForSignIn", name); // 新規登録なら名前も保存
+      } else {
+        window.localStorage.removeItem("nameForSignIn");
+      }
+
+      setIsSent(true); // 送信完了画面に切り替え
     } catch (error: any) {
-      alert("エラー: " + error.message);
+      alert("メール送信エラー: " + error.message);
     }
   };
 
+  // ✉️ メール送信が完了した後の「確認してね画面」
+  if (isSent) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4 font-sans">
+        <div className="max-w-sm w-full bg-white rounded-2xl shadow-2xl p-10 border border-slate-200 text-center">
+          <div className="w-12 h-12 bg-emerald-500 rounded-xl mx-auto mb-4 flex items-center justify-center text-white font-black shadow-lg shadow-emerald-100">✓</div>
+          <h1 className="text-sm font-black text-slate-800 uppercase tracking-[0.1em] mb-2">
+            確認メールを送信しました！
+          </h1>
+          <p className="text-xs text-slate-500 leading-relaxed mb-6">
+            <span className="font-bold text-slate-700 block my-1">{email}</span>
+            宛てにログイン用の魔法のリンクを送信しました。メール内のリンクをクリックしてログインを完了してください。
+          </p>
+          <div className="text-[10px] text-slate-400 border-t border-slate-100 pt-4">
+            ※メールが届かない場合は、迷惑メールフォルダをご確認いただくか、もう一度お試しください。
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 📝 通常の入力画面（パスワード欄は綺麗に消去済み）
   return (
     <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4 font-sans">
       <div className="max-w-sm w-full bg-white rounded-2xl shadow-2xl p-10 border border-slate-200">
@@ -66,13 +87,8 @@ export default function AuthPage() {
             <input type="email" placeholder="email@example.com" value={email} onChange={e => setEmail(e.target.value)} className="w-full rounded-md border border-slate-200 p-2.5 text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50/50" required />
           </div>
 
-          <div>
-            <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">パスワード</label>
-            <input type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} className="w-full rounded-md border border-slate-200 p-2.5 text-xs outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50/50" required />
-          </div>
-
-          <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-lg text-xs font-bold shadow-lg hover:bg-indigo-700 transition-all active:scale-95 mt-2">
-            {isLogin ? "ログインする" : "ワーカーとして登録する"}
+          <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-lg text-xs font-bold shadow-lg hover:bg-indigo-700 transition-all active:scale-95 mt-4">
+            {isLogin ? "ログインメールを受け取る" : "登録用メールを受け取る"}
           </button>
         </form>
 
