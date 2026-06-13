@@ -21,7 +21,7 @@ export default function OwnerExportPage() {
       const start = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
       const currentMonthStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`; // 例: "2026-06"
 
-      // 💡 jobs（案件）、users（ワーカー）、そしてワーカーの月次確定ステータス（workerMonthlyStatus）を全取得
+      // jobs（案件）、users（ワーカー）、そしてワーカーの月次確定ステータス（workerMonthlyStatus）を全取得
       const [jobSnap, userSnap, statusSnap] = await Promise.all([
         getDocs(collection(db, "jobs")),
         getDocs(query(collection(db, "users"), where("role", "==", "worker"))),
@@ -34,11 +34,10 @@ export default function OwnerExportPage() {
         `${d.data().lastName || ""} ${d.data().firstName || ""}`.trim() || d.data().name || "不明"
       ]));
 
-      // 💡【新設】ワーカーごとの確認済みステータスを引ける辞書を作成
+      // ワーカーごとの確認済みステータスを引ける辞書を作成
       const statusMap: { [key: string]: string } = {};
       statusSnap.docs.forEach(d => {
         const sData = d.data();
-        // 対象月が一致するフラグを格納 (例: statusMap["workerUid"] = "confirmed")
         if (sData.yearMonth === currentMonthStr && sData.workerId) {
           statusMap[sData.workerId] = sData.status || "none";
         }
@@ -65,7 +64,6 @@ export default function OwnerExportPage() {
                 acceptedCount: 0, 
                 completedCount: 0, 
                 totalSeconds: 0,
-                // 💡辞書からこのワーカーの提出ステータスを割り当てる（なければ未提出）
                 submissionStatus: statusMap[wId] || "none" 
               };
             }
@@ -109,7 +107,6 @@ export default function OwnerExportPage() {
     setExporting(true);
 
     try {
-      // CSVヘッダーにもステータスを追加
       const headers = ["ワーカー名", "活動日数", "案件請負数", "案件完了数", "稼働時間(h)", "提出ステータス"];
       
       const rows = summaryData.map(data => [
@@ -146,10 +143,33 @@ export default function OwnerExportPage() {
     }
   };
 
+  // 💡【新設計算ロジック】当月稼働したスタッフの締め状態をリアルタイム集計
+  const hasData = summaryData.length > 0;
+  const unsubmittedCount = summaryData.filter(w => w.submissionStatus !== "confirmed").length;
+  const isAllSubmitted = hasData && unsubmittedCount === 0;
+
   return (
     <OwnerShell title="データ出力" subTitle="月次実績の確認とCSV出力">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
+        {/* 💡【新設】月次締めステータス監視アラートボード */}
+        {hasData && !loadingData && (
+          <div className={`p-4 rounded border-2 shadow-sm flex items-center gap-3 transition-all ${
+            isAllSubmitted 
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
+              : 'bg-amber-50 border-amber-300 text-amber-800'
+          }`}>
+            <span className="text-base select-none">{isAllSubmitted ? "✨" : "⚠️"}</span>
+            <div className="text-xs font-black leading-relaxed">
+              {isAllSubmitted ? (
+                <p>対象月の稼働スタッフ全員（<span className="text-sm font-mono">{summaryData.length}</span>名）が実績提出を完了しました。今月の稼働データを安全に出力できます。</p>
+              ) : (
+                <p>未提出の稼働スタッフが <span className="text-sm font-mono text-rose-600 font-black px-1">{unsubmittedCount}</span> 名います。全員の提出が完了するまでデータ出力はロックされます。</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* 1. 操作パネル */}
         <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -164,8 +184,9 @@ export default function OwnerExportPage() {
           
           <button 
             onClick={handleExport}
-            disabled={exporting || summaryData.length === 0}
-            className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white border border-black/10 px-6 py-2.5 rounded text-xs font-black transition-colors disabled:opacity-30 flex items-center justify-center gap-1.5"
+            // 💡【安全ロック】未提出者がいる場合、または稼働データ自体がない場合はCSV出力を完全にブロック
+            disabled={exporting || !isAllSubmitted}
+            className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white border border border-black/10 px-6 py-2.5 rounded text-xs font-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm"
           >
             📥 {exporting ? "CSV生成中..." : "表示内容をCSVで出力する"}
           </button>
@@ -187,7 +208,6 @@ export default function OwnerExportPage() {
                   <th className="p-3 border-r border-slate-200 text-right w-24">案件請負数</th>
                   <th className="p-3 border-r border-slate-200 text-right w-24">案件完了数</th>
                   <th className="p-3 border-r border-slate-200 text-right w-28">総稼働時間</th>
-                  {/* 💡【新設】一番右端に提出ステータス列を配備 */}
                   <th className="p-3 text-center w-36">提出ステータス</th>
                 </tr>
               </thead>
@@ -199,14 +219,13 @@ export default function OwnerExportPage() {
                     <td className="p-3 border-r border-slate-200 text-right font-mono text-slate-600">{row.acceptedCount} 件</td>
                     <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-emerald-600">{row.completedCount} 件</td>
                     <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-[#0082C8] bg-slate-50/50">{row.duration} h</td>
-                    {/* 💡ワーカーの提出状況に応じて、見やすいモダンなフラットバッジをリアルタイム表示 */}
                     <td className="p-3 text-center">
                       {row.submissionStatus === "confirmed" ? (
                         <span className="bg-emerald-50 text-emerald-700 border border-emerald-300 text-[10px] font-black px-2 py-0.5 rounded shadow-inner">
                           ✓ 確認済み
                         </span>
                       ) : (
-                        <span className="bg-slate-50 text-slate-400 border border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                        <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black px-2 py-0.5 rounded animate-pulse">
                           ⏳ 未提出
                         </span>
                       )}
