@@ -24,6 +24,7 @@ export default function OwnerDashboard() {
   const [workerStats, setWorkerStats] = useState<any[]>([]);
   const [recentLogs, setRecentLogs] = useState<any[]>([]); 
   const [alertJobs, setAlertJobs] = useState<any[]>([]); 
+  const [recentComments, setRecentComments] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
 
   const formatTime = (s: number) => {
@@ -72,7 +73,6 @@ export default function OwnerDashboard() {
       if (!user) return;
       setLoading(true);
       try {
-        // 💡【カイゼン】下段大容量化に伴い、workLogsの新着取得件数を最大10件へ拡張
         const [jSnap, uSnap, lSnap] = await Promise.all([
           getDocs(query(collection(db, "jobs"), orderBy("createdAt", "desc"))),
           getDocs(query(collection(db, "users"), where("role", "==", "worker"))),
@@ -90,6 +90,7 @@ export default function OwnerDashboard() {
         let totalSec = 0, active = 0, review = 0, draft = 0, open = 0, nearDeadline = 0, overdue = 0;
         const workerAgg: any = {};
         const alertList: any[] = [];
+        const commentList: any[] = []; 
 
         allJobs.forEach((j: any) => {
           if (j.status === "working" || j.status === "paused") active++;
@@ -121,6 +122,19 @@ export default function OwnerDashboard() {
             });
           }
 
+          if (j.workerComment && j.workerComment.trim() !== "") {
+            const comDate = j.updatedAt?.toDate ? j.updatedAt.toDate() : (j.updatedAt ? new Date(j.updatedAt) : new Date());
+            commentList.push({
+              id: j.id,
+              title: j.title || "無題の案件",
+              workerName: userMap[j.workerId] || "未定",
+              comment: j.workerComment,
+              status: j.status,
+              timeStr: comDate.toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }) + " " + comDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+              rawDate: comDate
+            });
+          }
+
           if (j.workerId) {
             if (!workerAgg[j.workerId]) {
               workerAgg[j.workerId] = { name: userMap[j.workerId], total: 0, working: 0, review: 0, completed: 0, totalSeconds: 0 };
@@ -139,7 +153,6 @@ export default function OwnerDashboard() {
           }
         });
 
-        // 💡打刻ログを最大10件流せるように slice(0, 10) へ増量
         const formattedLogs = lSnap.docs.slice(0, 10).map(d => {
           const logData = d.data();
           const logDate = logData.timestamp?.toDate() ? logData.timestamp.toDate() : new Date();
@@ -151,6 +164,9 @@ export default function OwnerDashboard() {
             timeStr: logDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
           };
         });
+
+        commentList.sort((a: any, b: any) => b.rawDate.getTime() - a.rawDate.getTime());
+        setRecentComments(commentList.slice(0, 10));
 
         setStats({ 
           totalJobs: allJobs.length, 
@@ -164,7 +180,7 @@ export default function OwnerDashboard() {
         });
         setWorkerStats(Object.values(workerAgg).sort((a: any, b: any) => b.total - a.total));
         setRecentLogs(formattedLogs);
-        setAlertJobs(alertList.slice(0, 10)); // 💡アラートデスクも最大10件まで抜粋表示できるように増量
+        setAlertJobs(alertList.slice(0, 10));
 
       } catch (e) { 
         console.error(e); 
@@ -182,7 +198,7 @@ export default function OwnerDashboard() {
       <div className="space-y-4 max-w-full mx-auto text-slate-900 font-sans antialiased">
         
         {/* 【最上段】コントロールバー */}
-        <div className="bg-white border-2 border-slate-300 rounded p-3 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="bg-white p-3 rounded border-2 border-slate-300 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="text-sm font-black text-slate-700 flex items-center gap-1.5 pl-1 select-none">
             <span className="inline-block w-2.5 h-2.5 bg-[#0082C8] rounded-full animate-pulse"></span>
             システムクイック操作パネル
@@ -203,7 +219,7 @@ export default function OwnerDashboard() {
           </div>
         </div>
 
-        {/* 【中段エリア】左右2分割（高さ290pxのゆったり配置） */}
+        {/* 【中段エリア】左右2分割 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           
           {/* 左側：システム稼働状況サマリー */}
@@ -214,7 +230,6 @@ export default function OwnerDashboard() {
             </div>
             
             <div className="p-4.5 flex flex-col justify-between flex-1 bg-white divide-y-2 divide-slate-100">
-              {/* 上段：3連メトリクス数値 */}
               <div className="grid grid-cols-3 gap-3 pb-4">
                 <div className={`p-3 bg-white border border-slate-200 rounded flex flex-col justify-between shadow-sm ${stats.reviewJobs > 0 ? 'bg-amber-50/10 border-amber-300' : ''}`}>
                   <span className="text-[10px] font-black text-slate-400 block uppercase tracking-wider">要検収</span>
@@ -230,7 +245,6 @@ export default function OwnerDashboard() {
                 </div>
               </div>
 
-              {/* 下段：全案件内訳 ＆ 期日アラート */}
               <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 items-center">
                 <div className="space-y-2.5 flex flex-col justify-center">
                   <div className="flex justify-between items-center px-1">
@@ -302,10 +316,10 @@ export default function OwnerDashboard() {
 
         </div>
 
-        {/* === 💡【大拡張エリア：下段】左右2分割の等幅を保ったまま、高さを 240px ➔ 450px へ縦長にドーンと大増築！ === */}
+        {/* 【下段エリア】左右2分割 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           
-          {/* 左パネル：ワーカー各自の直近の行動タイムライン（大容量10件リストが一覧表示可能） */}
+          {/* 左パネル：ワーカー各自の直近の行動タイムライン */}
           <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[450px]">
             <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-300 font-black text-sm text-slate-800 flex justify-between items-center select-none">
               <span>🔔 ワーカー新着行動タイムライン（直近の打刻ログ：最大10件）</span>
@@ -334,7 +348,7 @@ export default function OwnerDashboard() {
             </div>
           </div>
 
-          {/* 右パネル：要対応・至急案件アラートダイジェスト（こちらも450pxへ完全同期して、縦の線が美しく並びます） */}
+          {/* 右パネル：要対応・至急案件アラートダイジェスト */}
           <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[450px]">
             <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-300 font-black text-sm text-slate-800 flex justify-between items-center select-none">
               <span>⚠️ 要検収 ＆ 至急案件・期限超過ダイジェスト（最大10件）</span>
@@ -366,14 +380,61 @@ export default function OwnerDashboard() {
                 </div>
               ))}
               {alertJobs.length === 0 && (
-                <div className="p-16 text-center text-slate-400 italic font-medium text-xs">現在、検収待ちや至急対応の案件はありません。順調です！</div>
+                <div className="p-16 text-center text-slate-400 italic font-medium text-xs">現在、検収待ちや至急対応 of 案件はありません。順調です！</div>
               )}
             </div>
           </div>
 
         </div>
 
+        {/* 💬 ワーカーリアルタイム報告・作業メモフィード */}
+        <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden flex flex-col h-[400px]">
+          <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-300 font-black text-sm text-slate-800 flex justify-between items-center select-none">
+            <span>💬 ワーカーリアルタイム報告・作業メモフィード（新着順：最大10件）</span>
+            <span className="text-[9px] font-mono text-[#0082C8] font-bold uppercase">Worker Comments</span>
+          </div>
+          <div className="divide-y divide-slate-100 bg-white overflow-y-auto flex-1">
+            {recentComments.map((com) => (
+              <div key={com.id} className="p-3.5 flex flex-col sm:flex-row sm:items-start justify-between gap-3 text-slate-800 hover:bg-slate-50/40 transition-colors border-b border-slate-100 last:border-0">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-black text-slate-950 text-sm">#️⃣ {com.workerName}</span>
+                    <span className="text-[10px] text-slate-300 font-bold">➔</span>
+                    <Link 
+                      href={`/owner/jobs/${com.id}`} 
+                      className="font-black text-xs text-[#0082C8] hover:underline hover:text-[#0072B5] transition-colors truncate max-w-xs sm:max-w-md block"
+                    >
+                      {com.title}
+                    </Link>
+                    <span className={`px-2 py-0.5 border text-[9px] font-black rounded block text-center uppercase tracking-wide ${
+                      com.status === 'working' ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' :
+                      com.status === 'paused' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                      com.status === 'review' ? 'bg-orange-50 text-orange-700 border-orange-200 font-extrabold' :
+                      com.status === 'completed' ? 'bg-slate-100 text-slate-600 border-slate-200' :
+                      'bg-blue-50 text-blue-700 border-blue-200'
+                    }`}>
+                      {com.status === 'working' ? '進行中' : 
+                       com.status === 'paused' ? '一時停止' : 
+                       com.status === 'review' ? '検収待ち' : 
+                       com.status === 'completed' ? '完了' : '受諾済'}
+                    </span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded p-2.5 text-xs text-slate-700 font-medium whitespace-pre-wrap leading-relaxed shadow-inner">
+                    {com.comment}
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0 self-end sm:self-start">
+                  <span className="text-[10px] text-slate-400 font-mono font-bold block">{com.timeStr}</span>
+                </div>
+              </div>
+            ))}
+            {recentComments.length === 0 && (
+              <div className="p-16 text-center text-slate-400 italic font-medium text-xs">現在、ワーカーからのテキスト報告（一時保存・完了メモ）はありません。</div>
+            )}
+          </div>
+        </div>
+
       </div>
-    </OwnerShell>
+    </OwnerShell> // 💡 完璧に OwnerShell で閉じる形に大修正！
   );
 }
