@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import { doc, getDoc, updateDoc, serverTimestamp, setDoc, deleteDoc, collection, addDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth"; // 💡 認証状態をリアルタイム監視するために追加
+import { onAuthStateChanged } from "firebase/auth";
 import WorkerShell from "@/components/WorkerShell";
 import Link from "next/link";
 import Image from "next/image";
@@ -20,7 +20,11 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [isWished, setIsWished] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null); // 💡 ログインユーザーを確実に保持するステートを新設
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  
+  // ワーカーのコメント・作業メモ入力を管理するステート
+  const [workerComment, setWorkerComment] = useState("");
+  const [isSavingComment, setIsSavingComment] = useState(false);
 
   // カスタムポップアップ（モーダル）用の管理ステート
   const [modalOpen, setModalOpen] = useState(false);
@@ -31,22 +35,22 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   // コピー完了通知用のポップステート
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // 初期データの取得（💡 auth.currentUser のすれ違いバグを完全に修正）
+  // 初期データの取得
   useEffect(() => {
     if (!id) return;
 
-    // Firebaseのログイン準備が100%整うのを待ってからデータを安全に取得する
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        setCurrentUser(user); // 確実なユーザー情報をセット
+        setCurrentUser(user);
         try {
           const docRef = doc(db, "jobs", id);
           const snap = await getDoc(docRef);
           if (snap.exists()) {
-            setJob({ id: snap.id, ...snap.data() });
+            const data = snap.data() as any;
+            setJob({ id: snap.id, ...data });
+            setWorkerComment(data.workerComment || "");
           }
 
-          // 新しい正規UIDに基づいてウィッシュリストの存在を確認
           const wishSnap = await getDoc(doc(db, "wishlists", `${user.uid}_${id}`));
           setIsWished(wishSnap.exists());
         } catch (error) { 
@@ -55,7 +59,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           setLoading(false);
         }
       } else {
-        // ログインしていない場合はログイン画面へ
         router.push("/login");
       }
     });
@@ -71,7 +74,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     return `${h}h ${m}m ${sec}s`;
   };
 
-  // 开始された「時刻」を日本の時計（HH:MM:SS）で見やすくフォーマットする関数
+  // 开始された「時刻」を見やすくフォーマットする関数
   const formatStartTime = (timestamp: any) => {
     if (!timestamp) return "";
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
@@ -93,7 +96,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const handleToggleWish = async () => {
     if (!currentUser || !job) return;
     
-    // 新しい正規UIDでウィッシュリストのドキュメントパスを作成
     const wishRef = doc(db, "wishlists", `${currentUser.uid}_${job.id}`);
     try {
       if (isWished) {
@@ -112,6 +114,27 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     }
   };
 
+  // テキストエリアの内容を「いつでも一時保存」できる関数
+  const handleSaveComment = async () => {
+    if (!job || !currentUser) return;
+    setIsSavingComment(true);
+    try {
+      const jobRef = doc(db, "jobs", job.id);
+      await updateDoc(jobRef, {
+        workerComment: workerComment,
+        updatedAt: serverTimestamp()
+      });
+      // 💡【修正点】TypeScriptのエラーを防ぐため (prev: any) へと明示的にキャスト！
+      setJob((prev: any) => ({ ...prev, workerComment: workerComment }));
+      alert("報告コメント・作業メモを一時保存しました！");
+    } catch (e) {
+      console.error("コメントの一時保存に失敗しました:", e);
+      alert("保存に失敗しました。");
+    } finally {
+      setIsSavingComment(false);
+    }
+  };
+
   // ポップアップを起動する窓口
   const triggerModal = (type: "accept" | "start" | "pause" | "complete") => {
     setModalActionType(type);
@@ -126,7 +149,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       setModalMessage("休憩や中断のため、タイマーを停止しますか？\n※ここまでの稼働時間が集計され、実績に合算保存されます。");
     } else if (type === "complete") {
       setModalTitle("🏁 完了報告を提出する");
-      setModalMessage("本日の作業をすべて終了し、オーナーへ提出しますか？\n※提出後は時間の書き換えができなくなりますのでご注意ください。");
+      setModalMessage("本日の作業をすべて終了し、オーナーへ提出しますか？\n\n※現在最下部のメモ欄に入力されているコメントが、そのまま最終実績として提出されます。");
     }
     setModalOpen(true);
   };
@@ -143,7 +166,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
       if (modalActionType === "accept") {
         await updateDoc(jobRef, {
-          workerId: currentUser.uid, // 💡 新しい正規UIDで案件をガチッと紐付け
+          workerId: currentUser.uid, 
           status: "assigned",
           updatedAt: serverTimestamp()
         });
@@ -212,6 +235,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
         await updateDoc(jobRef, {
           status: "review",
           totalAccumulatedSeconds: finalSeconds,
+          workerComment: workerComment, 
           submittedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -240,7 +264,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   if (loading) return <WorkerShell title="読み込み中"><div className="p-10 text-center text-slate-400 text-xs font-bold">データを取得中...</div></WorkerShell>;
   if (!job) return <WorkerShell title="エラー"><div className="p-10 text-center text-rose-600 font-bold text-xs">案件が見つかりませんでした。</div></WorkerShell>;
 
-  // 💡 確実に確定した currentUser.uid との比較に修正
   const isMyJob = job.workerId === currentUser?.uid;
 
   return (
@@ -382,6 +405,36 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               <div className="bg-amber-50/30 border border-amber-200 rounded p-3 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap font-medium">{job.memo}</div>
             </div>
           )}
+
+          {/* 報告コメント / 作業メモ欄 */}
+          {isMyJob && (
+            <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
+              <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">報告コメント / 作業メモ欄</h2>
+              <p className="text-[10px] text-slate-400 font-medium">
+                ※作業中に気づいた点やオーナーへの引き継ぎ内容をいつでもメモ・一時保存できます。作業完了時に自動で提出されます。
+              </p>
+              <textarea
+                value={workerComment}
+                onChange={(e) => setWorkerComment(e.target.value)}
+                disabled={job.status === "review" || job.status === "completed"}
+                placeholder="例：50件目までフォーム送信完了しました。一部のアドレスがエラーだったため、SC上でスキップ処理を入れています。"
+                rows={4}
+                className="w-full border-2 border-slate-300 rounded p-2.5 text-xs font-bold outline-none focus:border-[#0082C8] bg-slate-50/40 disabled:bg-slate-100 disabled:text-slate-500 resize-y"
+              />
+              {(job.status === "assigned" || job.status === "working" || job.status === "paused") && (
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handleSaveComment}
+                    disabled={isSavingComment}
+                    className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-4 py-2 rounded border border-black/10 shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isSavingComment ? "保存中..." : "💾 コメントを一時保存する"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 右側：コントロールパネル */}
@@ -426,7 +479,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               <div className="space-y-2">
                 {job.status === 'open' && (
                   <button 
-                    type="button"
+                    type="button" 
                     onClick={handleToggleWish}
                     className={`w-full py-2.5 text-xs font-black rounded border-2 transition-colors ${
                       isWished ? 'bg-amber-400 text-slate-900 border-transparent' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'
@@ -438,7 +491,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
                 {!isMyJob ? (
                   <button 
-                    type="button"
+                    type="button" 
                     onClick={() => triggerModal("accept")}
                     disabled={submitting}
                     className="w-full py-3 bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-50"
@@ -449,7 +502,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                   <>
                     {job.status === "assigned" && (
                       <button 
-                        type="button"
+                        type="button" 
                         onClick={() => triggerModal("start")}
                         disabled={submitting}
                         className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm"
@@ -460,7 +513,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
                     {job.status === "paused" && (
                       <button 
-                        type="button"
+                        type="button" 
                         onClick={() => triggerModal("start")}
                         disabled={submitting}
                         className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm"
@@ -472,7 +525,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                     {job.status === "working" && (
                       <div className="grid grid-cols-1 gap-2">
                         <button 
-                          type="button"
+                          type="button" 
                           onClick={() => triggerModal("pause")}
                           disabled={submitting}
                           className="w-full py-3 bg-slate-200 hover:bg-slate-300 border-2 border-slate-400 text-slate-700 text-xs font-black rounded transition-colors"
@@ -480,7 +533,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                           ⏸️ 一時停止する
                         </button>
                         <button 
-                          type="button"
+                          type="button" 
                           onClick={() => triggerModal("complete")}
                           disabled={submitting}
                           className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-md"

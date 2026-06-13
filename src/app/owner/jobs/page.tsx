@@ -13,10 +13,8 @@ export default function OwnerJobsPage() {
   const [loading, setLoading] = useState(true);
   const [userMap, setUserMap] = useState<{ [key: string]: string }>({});
 
-  // 'recruiting': 募集中・下書き / 'working': 請負中・稼働中 / 'completed': 納品済・完了
   const [activeTab, setActiveTab] = useState<'recruiting' | 'working' | 'completed'>('recruiting');
 
-  // 絞り込みフィルターの選択状態
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterJobType, setFilterJobType] = useState<string>("all");
   const [filterUrgency, setFilterUrgency] = useState<string>("all");
@@ -304,7 +302,7 @@ export default function OwnerJobsPage() {
                   <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
                   <th className="p-3 border-r border-slate-300 w-28">担当スタッフ</th>
                   <th className="p-3 border-r border-slate-300">案件タイトル</th>
-                  <th className="p-3 border-r border-slate-300 w-20 text-right">件数</th> {/* 💡「予定数」から移動＆「件数」にリネーム */}
+                  <th className="p-3 border-r border-slate-300 w-20 text-right">件数</th>
                   <th className="p-3 border-r border-slate-300 w-28 text-center">期日</th>
                   <th className="p-3 border-r border-slate-300 w-44">SCクライアント</th>
                   <th className="p-3 w-12 text-center">操作</th>
@@ -373,12 +371,10 @@ export default function OwnerJobsPage() {
                         </Link>
                       </td>
 
-                      {/* 💡【移動＆サイズ拡大】「件数」をここに挟み込み、text-sm & font-black で数字の視認性を爆上げ！ */}
                       <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-slate-700">
                         {job.count || 0} 件
                       </td>
 
-                      {/* 💡【サイズ拡大】「期日」も text-sm & font-black に引き上げ、スケジュールの見落としを完全破壊！ */}
                       <td className={`p-3 border-r border-slate-200 font-mono font-black text-center text-sm ${
                         isUrgentDeadline 
                           ? 'bg-rose-100 text-rose-950 border-2 border-rose-300 rounded animate-pulse' 

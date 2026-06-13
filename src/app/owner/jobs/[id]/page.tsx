@@ -19,12 +19,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // 💡シンプルモダン確認ポップアップ用の管理ステート
+  // シンプルモダン確認ポップアップ用の管理ステート
   const [modalOpen, setModalOpen] = useState(false);
-  // 💡どのアクション（下書き戻し / 検収承認 / 公開）を呼ぶかを識別するステート
+  // どのアクション（下書き戻し / 検収承認 / 公開）を呼ぶかを識別するステート
   const [modalType, setModalType] = useState<"draft" | "approve" | "publish" | null>(null);
 
-  // 💡【新設】コピー完了通知用のポップステート
+  // コピー完了通知用のポップステート
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,12 +53,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     return `${h}h ${m}m ${sec}s`;
   };
 
-  // 💡【新設】クリップボードへの一撃コピー関数
+  // クリップボードへの一撃コピー関数
   const handleCopyToClipboard = (text: string, fieldName: string) => {
     if (!text || text === "-") return;
     navigator.clipboard.writeText(text).then(() => {
       setCopiedField(fieldName);
-      setTimeout(() => setCopiedField(null), 1000); // 1秒後にフワッと消す
+      setTimeout(() => setCopiedField(null), 1000); 
     }).catch(err => console.error("コピーに失敗しました:", err));
   };
 
@@ -215,7 +215,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           </div>
 
-          {/* 💡【修正】案件タイトルのコピーボタン実装 */}
+          {/* 案件タイトル */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 shadow-sm relative group">
             <span className="text-[9px] font-mono text-slate-400 font-black block mb-1">JOB TITLE</span>
             <div className="flex items-start justify-between gap-4">
@@ -230,7 +230,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   📋 <span className="text-[9px] font-black text-slate-600">COPY</span>
                 </button>
                 {copiedField === "title" && (
-                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 bg-slate-950 text-white text-[9px] font-black px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-fade-in-down">
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 bg-slate-950 text-white text-[9px] font-black px-2 py-0.5 rounded shadow-md whitespace-nowrap">
                     コピーしました！
                   </span>
                 )}
@@ -240,7 +240,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
           <div className="grid grid-cols-1 sm:grid-cols-3 bg-white border-2 border-slate-300 rounded overflow-hidden divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-300 shadow-sm">
             
-            {/* 💡【修正】SCクライアント名のコピーボタン実装 */}
+            {/* SCクライアント名 */}
             <div className="p-3 flex flex-col justify-between min-h-[64px] relative group">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント名</span>
               <div className="flex items-center justify-between gap-2 mt-1 w-full">
@@ -270,7 +270,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               <div className="mt-1 flex items-center justify-between">
                 <span className="text-[10px] text-slate-400 font-mono truncate max-w-[120px]">{job.inputInfo || job.targetItems || "未登録"}</span>
                 {(job.inputInfo || job.targetItems) && (
-                  <a href={job.inputInfo || job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-2 py-0.5 rounded transition-colors shadow-sm whitespace-nowrap">開く ↗</a>
+                  <a href={job.inputInfo || job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-2 py-0.5 rounded transition-colors shadow-sm whitespace-nowrap">開白 ↗</a>
                 )}
               </div>
             </div>
@@ -315,6 +315,24 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               <div className="bg-amber-50/40 border border-amber-200 rounded p-3 text-xs text-slate-700 font-medium whitespace-pre-wrap leading-relaxed">
                 {job.memo}
               </div>
+            </div>
+          )}
+
+          {/* 💡【超絶ドッキング】ワーカーから提出されたリアルタイム報告コメント表示ボード */}
+          {job.status !== "open" && job.status !== "draft" && (
+            <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
+              <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">
+                📥 ワーカーからの報告コメント・作業メモ
+              </h2>
+              {job.workerComment && job.workerComment.trim() !== "" ? (
+                <div className="bg-blue-50/30 border border-blue-200 rounded p-3 text-xs text-slate-800 font-bold whitespace-pre-wrap leading-relaxed shadow-xs">
+                  {job.workerComment}
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200 rounded p-3 text-xs text-slate-400 font-medium italic">
+                  ワーカーからのテキスト報告（一時保存・完了メモ）は現在ありません。
+                </div>
+              )}
             </div>
           )}
         </div>
