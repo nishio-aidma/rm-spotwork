@@ -145,17 +145,17 @@ export default function WorkLogsPage() {
     <WorkerShell title="稼働履歴" subTitle="日別稼働時間の明細一覧">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 💡【リフォーム点】ヘッダーを追従固定（sticky）にし、ボタン類をすべて1つのボードへ極上集約！ */}
-        <div className="sticky top-0 z-20 bg-[#f8fafc] -mt-2 pt-2 pb-1.5 backdrop-blur-sm">
+        {/* 💡【最重要変更】青ヘッダー（通常64px）の直下にピタッと常駐させるため、top-16 に位置をチューニング！ */}
+        <div className="sticky top-16 z-20 bg-[#f8fafc] pt-2 pb-2">
           <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden">
             
-            {/* ① 看板タイトルの変更（月次稼働記録） */}
+            {/* 看板タイトル */}
             <div className="bg-slate-100 p-2.5 border-b-2 border-slate-300 flex justify-between items-center select-none">
               <span className="text-xs font-black text-slate-700">🌙 月次稼働記録</span>
               <span className="text-[10px] font-mono font-bold text-slate-400">MONTHLY RECORD</span>
             </div>
 
-            {/* ② 全要素の一体型モダンライン */}
+            {/* 全要素の一体型モダンライン */}
             <div className="p-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-blue-50/40">
               
               {/* 【左ブロック】メニューに戻る ＆ 月選択コンソール */}
@@ -177,7 +177,6 @@ export default function WorkLogsPage() {
               
               {/* 【右ブロック】稼働集計時間显示 ＆ 締め提出ボタン */}
               <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:justify-end flex-1 w-full">
-                {/* 💡「合計稼稼働時間」になっていたタイポもついでに修正 */}
                 <div className="space-y-0.5 text-left sm:text-right">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
                     表示月の合計稼働時間
