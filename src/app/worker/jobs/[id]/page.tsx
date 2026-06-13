@@ -124,7 +124,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
         workerComment: workerComment,
         updatedAt: serverTimestamp()
       });
-      // 💡【修正点】TypeScriptのエラーを防ぐため (prev: any) へと明示的にキャスト！
       setJob((prev: any) => ({ ...prev, workerComment: workerComment }));
       alert("報告コメント・作業メモを一時保存しました！");
     } catch (e) {
@@ -266,6 +265,10 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
   const isMyJob = job.workerId === currentUser?.uid;
 
+  // 動的戻り先シチュエーション判定
+  const backUrl = (isMyJob && job.status !== "open") ? "/worker/my-jobs" : "/worker/jobs";
+  const backText = (isMyJob && job.status !== "open") ? "🔙 進行中のタスク一覧に戻る" : "🔙 案件を探す（一覧）に戻る";
+
   return (
     <WorkerShell title="案件詳細" subTitle="業務内容の確認と打刻">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 max-w-full mx-auto pb-32 text-slate-900 font-sans antialiased">
@@ -275,10 +278,10 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           <div className="flex justify-between items-center bg-white border-2 border-slate-300 p-3 rounded shadow-sm">
             <button 
               type="button"
-              onClick={() => router.push("/worker/jobs")} 
+              onClick={() => router.push(backUrl)} 
               className="bg-slate-100 border-2 border-slate-400 hover:bg-slate-200 text-slate-800 text-[11px] font-black px-4 py-1.5 rounded transition-all active:scale-95 shadow-sm"
             >
-              🔙 案件を探す（一覧）に戻る
+              {backText}
             </button>
             <div className="flex gap-2">
               <span className="bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded font-bold text-[10px]">
@@ -406,28 +409,30 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </div>
           )}
 
-          {/* 報告コメント / 作業メモ欄 */}
+          {/* 報告コメント / 作業メモ入力 */}
           {isMyJob && (
-            <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
-              <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">報告コメント / 作業メモ欄</h2>
-              <p className="text-[10px] text-slate-400 font-medium">
-                ※作業中に気づいた点やオーナーへの引き継ぎ内容をいつでもメモ・一時保存できます。作業完了時に自動で提出されます。
+            <div className="bg-sky-50/50 border-2 border-sky-400/80 rounded p-4 space-y-2.5 shadow-md transition-all animate-fade-in">
+              <h2 className="text-xs font-black text-sky-950 uppercase tracking-wider border-l-4 border-[#0082C8] pl-2 flex items-center gap-1.5 select-none">
+                💬 報告コメント / 作業メモ入力
+              </h2>
+              <p className="text-[10px] text-sky-800/80 font-bold leading-relaxed select-none">
+                ※作業中に気づいた点やオーナーへの引き継ぎ内容をいつでも自由にメモ・一時保存できます。ここに書いた内容は、右の「作業を完了する」ボタンを押したときに最終実績として自動提出されます。
               </p>
               <textarea
                 value={workerComment}
                 onChange={(e) => setWorkerComment(e.target.value)}
                 disabled={job.status === "review" || job.status === "completed"}
-                placeholder="例：50件目までフォーム送信完了しました。一部のアドレスがエラーだったため、SC上でスキップ処理を入れています。"
+                placeholder="例：50件目までフォーム送信完了しました。一部のアドレスがエラーだったため、SC上でスキップ処理を入れています。稼働ログに残らない特記事項など、自由にメモにご活用ください！"
                 rows={4}
-                className="w-full border-2 border-slate-300 rounded p-2.5 text-xs font-bold outline-none focus:border-[#0082C8] bg-slate-50/40 disabled:bg-slate-100 disabled:text-slate-500 resize-y"
+                className="w-full border-2 border-sky-300 rounded p-2.5 text-xs font-bold outline-none focus:border-[#0082C8] focus:ring-2 focus:ring-sky-100 bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500 resize-y shadow-inner transition-all"
               />
               {(job.status === "assigned" || job.status === "working" || job.status === "paused") && (
-                <div className="flex justify-end pt-1">
+                <div className="flex justify-end pt-0.5">
                   <button
                     type="button"
                     onClick={handleSaveComment}
                     disabled={isSavingComment}
-                    className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-4 py-2 rounded border border-black/10 shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                    className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-4 py-2 rounded border border-black/10 shadow-md transition-all active:scale-95 disabled:opacity-50"
                   >
                     {isSavingComment ? "保存中..." : "💾 コメントを一時保存する"}
                   </button>
@@ -594,6 +599,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
         </div>
       )}
 
-    </WorkerShell>
+    </WorkerShell> // 💡 602行目を完璧に </WorkerShell> へリプレース完了！
   );
 }
