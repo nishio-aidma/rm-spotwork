@@ -97,6 +97,33 @@ export default function WorkLogsPage() {
     }
   };
 
+  const handleCheckAll = async () => {
+    if (monthlyStatus === "confirmed" || logs.length === 0) return;
+
+    const uncheckedLogs = logs.filter(log => !log.checked);
+    if (uncheckedLogs.length === 0) return;
+
+    setSubmitting(true);
+    try {
+      await Promise.all(
+        uncheckedLogs.map(log => 
+          updateDoc(doc(db, "workLogs", log.id), {
+            checked: true,
+            checkedAt: serverTimestamp()
+          })
+        )
+      );
+
+      setLogs(prev => prev.map(log => ({ ...log, checked: true })));
+      alert(`表示中の未確認データ（${uncheckedLogs.length}件）をすべて確認済みにしました！`);
+    } catch (e) {
+      console.error("一括確認エラー:", e);
+      alert("一括確認処理に失敗しました。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleConfirmMonthSubmit = async () => {
     setModalOpen(false);
     if (!user || !currentMonthStr) return;
@@ -192,13 +219,31 @@ export default function WorkLogsPage() {
             
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:justify-end flex-1 w-full">
               
+              {/* 💡【メッセージ分岐】未確認データがある場合 */}
               {logs.length > 0 && hasUncheckedLogs && monthlyStatus !== "confirmed" && (
-                <div className="bg-amber-100 border border-amber-300 text-amber-800 px-3 py-1.5 rounded text-[10px] font-black tracking-wide flex items-center gap-1 sm:mr-2 animate-pulse">
-                  ⚠️ 未確認の稼働があります（各カードを押して確認済みにしてください）
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
+                  <div className="bg-amber-100 border border-amber-300 text-amber-800 px-2.5 py-1 rounded text-[10px] font-black tracking-wide flex items-center gap-1 animate-pulse select-none">
+                    ⚠️ 未確認の稼働があります
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCheckAll}
+                    disabled={submitting}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black px-3 py-1.5 rounded border border-black/10 shadow-sm transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap text-center"
+                  >
+                    ✅ 全件確認済みにする
+                  </button>
                 </div>
               )}
 
-              <div className="space-y-0.5 text-left sm:text-right">
+              {/* 💡【新設メッセージ】すべてのデータが確認済み（かつ未提出）になった瞬間に出現 */}
+              {logs.length > 0 && !hasUncheckedLogs && monthlyStatus !== "confirmed" && (
+                <div className="bg-emerald-100 border border-emerald-300 text-emerald-800 px-2.5 py-1.5 rounded text-[10px] font-black tracking-wide flex items-center gap-1 shrink-0 select-none shadow-xs">
+                  ✨ すべての稼働を確認済みです（提出可能です）
+                </div>
+              )}
+
+              <div className="space-y-0.5 text-left sm:text-right shrink-0">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
                   表示月の合計稼働時間
                 </span>
