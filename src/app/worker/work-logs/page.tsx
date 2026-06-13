@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, query, getDocs, where, deleteDoc, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, getDocs, where, deleteDoc, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import WorkerShell from "@/components/WorkerShell";
@@ -58,6 +58,7 @@ export default function WorkLogsPage() {
           seconds: Number(data.seconds || 0),
           startTime,
           endTime,
+          checked: data.checked || false,
         };
       }).filter((log: any) => {
         const isMatch = log.startTime.getFullYear() === year && log.startTime.getMonth() === month;
@@ -79,6 +80,22 @@ export default function WorkLogsPage() {
   useEffect(() => {
     if (!authLoading) fetchLogsAndStatus();
   }, [user, authLoading, viewDate]);
+
+  const handleToggleCheck = async (logId: string, currentChecked: boolean) => {
+    if (monthlyStatus === "confirmed") return;
+
+    try {
+      const logRef = doc(db, "workLogs", logId);
+      await updateDoc(logRef, {
+        checked: !currentChecked,
+        checkedAt: !currentChecked ? serverTimestamp() : null
+      });
+
+      setLogs(prev => prev.map(log => log.id === logId ? { ...log, checked: !currentChecked } : log));
+    } catch (e) {
+      console.error("チェック状態の更新に失敗しました:", e);
+    }
+  };
 
   const handleConfirmMonthSubmit = async () => {
     setModalOpen(false);
@@ -141,24 +158,22 @@ export default function WorkLogsPage() {
   
   if (authLoading || loading) return <WorkerShell title="稼働履歴"><div className="p-10 text-center text-slate-400 text-xs font-bold">打刻データを集計中...</div></WorkerShell>;
 
+  const hasUncheckedLogs = logs.some(log => !log.checked);
+
   return (
     <WorkerShell title="稼働履歴" subTitle="日別稼働時間の明細一覧">
-      {/* 💡【超絶リフォーム】画面全体の高さを固定し、外枠ではなく「リストの中だけ」をスクロールさせる絶対固定レイアウト構造 */}
       <div className="max-w-full mx-auto flex flex-col h-[calc(100vh-140px)] text-slate-900 font-sans antialiased overflow-hidden">
         
-        {/* 👑 【上部エリア：完全固定】独立しているため、スクロールしても1ミリも動きません */}
+        {/* 【上部エリア：完全固定コントロールボード】 */}
         <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden mb-3 shrink-0">
           
-          {/* 看板タイトル */}
           <div className="bg-slate-100 p-2.5 border-b-2 border-slate-300 flex justify-between items-center select-none">
             <span className="text-xs font-black text-slate-700">🌙 月次稼働記録</span>
             <span className="text-[10px] font-mono font-bold text-slate-400">MONTHLY RECORD</span>
           </div>
 
-          {/* 全要素の一体型モダンライン */}
           <div className="p-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-blue-50/40">
             
-            {/* 【左ブロック】メニューに戻る ＆ 月選択コンソール */}
             <div className="flex items-center gap-4 flex-wrap">
               <button 
                 type="button"
@@ -175,8 +190,14 @@ export default function WorkLogsPage() {
               </div>
             </div>
             
-            {/* 【右ブロック】稼働集計時間显示 ＆ 締め提出ボタン */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:justify-end flex-1 w-full">
+              
+              {logs.length > 0 && hasUncheckedLogs && monthlyStatus !== "confirmed" && (
+                <div className="bg-amber-100 border border-amber-300 text-amber-800 px-3 py-1.5 rounded text-[10px] font-black tracking-wide flex items-center gap-1 sm:mr-2 animate-pulse">
+                  ⚠️ 未確認の稼働があります（各カードを押して確認済みにしてください）
+                </div>
+              )}
+
               <div className="space-y-0.5 text-left sm:text-right">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
                   表示月の合計稼働時間
@@ -195,8 +216,8 @@ export default function WorkLogsPage() {
                   <button
                     type="button"
                     onClick={() => setModalOpen(true)} 
-                    disabled={submitting || monthlyTotalSeconds === 0}
-                    className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white text-[11px] font-black px-4 py-2 rounded border border-black/10 shadow-sm transition-all active:scale-95 disabled:opacity-30 whitespace-nowrap text-center"
+                    disabled={submitting || monthlyTotalSeconds === 0 || hasUncheckedLogs}
+                    className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white text-[11px] font-black px-4 py-2 rounded border border-black/10 shadow-sm transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap text-center"
                   >
                     🔒 確定して実績を提出
                   </button>
@@ -207,16 +228,14 @@ export default function WorkLogsPage() {
           </div>
         </div>
 
-        {/* 👥 【下部エリア：日次明細コンテナ】ここだけが独立して縦スクロールします */}
+        {/* 👥 【下部エリア：日次明細コンテナ】 */}
         <div className="bg-white border-2 border-slate-300 rounded shadow-sm flex flex-col min-h-0 flex-1 overflow-hidden">
           
-          {/* テーブルのヘッダー軸（ここもスクロールせずに最上部にガチッと固定！） */}
           <div className="grid grid-cols-[90px_1fr] bg-slate-100 border-b-2 border-slate-300 text-xs font-black text-slate-700 px-4 py-2.5 shrink-0 select-none">
             <div className="border-r border-slate-300">日付軸</div>
-            <div className="pl-6">打刻明細 / 稼働内容</div>
+            <div className="pl-6">打刻明細 / 稼働内容（※クリックで個別確認）</div>
           </div>
 
-          {/* 📅 【動的スクロール本体】日次記録の一覧だけが、この中でスムーズにスクロールします */}
           <div className="divide-y-2 divide-slate-200 overflow-y-auto flex-1 bg-white">
             {calendarDays.map((date) => {
               const day = date.getDate();
@@ -241,10 +260,27 @@ export default function WorkLogsPage() {
 
                   <div className="p-2 pl-6 flex flex-wrap gap-2 items-center min-w-0">
                     {dayLogs.length > 0 ? dayLogs.map((log: any) => (
-                      <div key={log.id} className="bg-white border border-slate-300 rounded p-2 flex items-center gap-4 shadow-sm group hover:border-slate-400 transition-colors max-w-full">
+                      <div 
+                        key={log.id} 
+                        onClick={() => handleToggleCheck(log.id, log.checked)}
+                        className={`border rounded p-2 flex items-center gap-4 shadow-sm group transition-all max-w-full ${
+                          monthlyStatus !== "confirmed" ? "cursor-pointer active:scale-95 select-none" : ""
+                        } ${
+                          log.checked 
+                            ? 'bg-emerald-50/80 border-emerald-400 hover:border-emerald-500' 
+                            : 'bg-white border-slate-300 hover:border-slate-400'
+                        }`}
+                      >
                         <div className="min-w-0">
-                          <div className="text-[10px] font-black text-slate-400 truncate max-w-[140px] mb-0.5" title={log.jobTitle}>
-                            {log.jobTitle}
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-sm text-white whitespace-nowrap leading-none ${
+                              log.checked ? 'bg-emerald-600' : 'bg-amber-500 animate-pulse'
+                            }`}>
+                              {log.checked ? "✓ 確認済" : "⚠️ 未確認"}
+                            </span>
+                            <div className="text-[10px] font-black text-slate-500 truncate max-w-[140px]" title={log.jobTitle}>
+                              {log.jobTitle}
+                            </div>
                           </div>
                           <div className="flex items-center gap-1 font-mono text-[11px] font-bold text-slate-700">
                             <span>{formatHM(log.startTime)}</span>
@@ -255,14 +291,18 @@ export default function WorkLogsPage() {
                         
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <div className="text-right border-l-2 border-slate-200 pl-2">
-                            <span className="text-xs font-black text-[#0082C8] block font-mono whitespace-nowrap">
+                            <span className={`text-xs font-black block font-mono whitespace-nowrap ${log.checked ? 'text-emerald-700' : 'text-[#0082C8]'}`}>
                               {formatBadgeTime(log.seconds)}
                             </span>
                           </div>
                           
                           {monthlyStatus !== "confirmed" && (
                             <button 
-                              onClick={() => handleDelete(log.id)} 
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation(); 
+                                handleDelete(log.id);
+                              }} 
                               className="text-slate-300 hover:text-rose-600 transition-colors p-1"
                               title="この記録を削除"
                             >
