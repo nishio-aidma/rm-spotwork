@@ -143,80 +143,81 @@ export default function WorkLogsPage() {
 
   return (
     <WorkerShell title="稼働履歴" subTitle="日別稼働時間の明細一覧">
-      <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
+      {/* 💡【超絶リフォーム】画面全体の高さを固定し、外枠ではなく「リストの中だけ」をスクロールさせる絶対固定レイアウト構造 */}
+      <div className="max-w-full mx-auto flex flex-col h-[calc(100vh-140px)] text-slate-900 font-sans antialiased overflow-hidden">
         
-        {/* 💡【最重要変更】青ヘッダー（通常64px）の直下にピタッと常駐させるため、top-16 に位置をチューニング！ */}
-        <div className="sticky top-16 z-20 bg-[#f8fafc] pt-2 pb-2">
-          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden">
+        {/* 👑 【上部エリア：完全固定】独立しているため、スクロールしても1ミリも動きません */}
+        <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden mb-3 shrink-0">
+          
+          {/* 看板タイトル */}
+          <div className="bg-slate-100 p-2.5 border-b-2 border-slate-300 flex justify-between items-center select-none">
+            <span className="text-xs font-black text-slate-700">🌙 月次稼働記録</span>
+            <span className="text-[10px] font-mono font-bold text-slate-400">MONTHLY RECORD</span>
+          </div>
+
+          {/* 全要素の一体型モダンライン */}
+          <div className="p-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-blue-50/40">
             
-            {/* 看板タイトル */}
-            <div className="bg-slate-100 p-2.5 border-b-2 border-slate-300 flex justify-between items-center select-none">
-              <span className="text-xs font-black text-slate-700">🌙 月次稼働記録</span>
-              <span className="text-[10px] font-mono font-bold text-slate-400">MONTHLY RECORD</span>
+            {/* 【左ブロック】メニューに戻る ＆ 月選択コンソール */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <button 
+                type="button"
+                onClick={() => router.push("/worker/dashboard")} 
+                className="text-[11px] font-black text-[#0082C8] hover:underline whitespace-nowrap shrink-0"
+              >
+                ← メインメニューに戻る
+              </button>
+              
+              <div className="flex items-center bg-white border-2 border-slate-300 rounded overflow-hidden shadow-xs shrink-0">
+                <button type="button" onClick={() => changeMonth(-1)} className="px-2.5 py-1 hover:bg-slate-100 text-slate-700 font-bold text-xs border-r border-slate-300 transition-colors">〈</button>
+                <span className="px-3 py-1 text-xs font-black text-slate-800 bg-slate-50 whitespace-nowrap min-w-[90px] text-center">{year}年 {month + 1}月</span>
+                <button type="button" onClick={() => changeMonth(1)} className="px-2.5 py-1 hover:bg-slate-100 text-slate-700 font-bold text-xs border-l border-slate-300 transition-colors">〉</button>
+              </div>
             </div>
-
-            {/* 全要素の一体型モダンライン */}
-            <div className="p-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-blue-50/40">
-              
-              {/* 【左ブロック】メニューに戻る ＆ 月選択コンソール */}
-              <div className="flex items-center gap-4 flex-wrap">
-                <button 
-                  type="button"
-                  onClick={() => router.push("/worker/dashboard")} 
-                  className="text-[11px] font-black text-[#0082C8] hover:underline whitespace-nowrap shrink-0"
-                >
-                  ← メインメニューに戻る
-                </button>
-                
-                <div className="flex items-center bg-white border-2 border-slate-300 rounded overflow-hidden shadow-xs shrink-0">
-                  <button type="button" onClick={() => changeMonth(-1)} className="px-2.5 py-1 hover:bg-slate-100 text-slate-700 font-bold text-xs border-r border-slate-300 transition-colors">〈</button>
-                  <span className="px-3 py-1 text-xs font-black text-slate-800 bg-slate-50 whitespace-nowrap min-w-[90px] text-center">{year}年 {month + 1}月</span>
-                  <button type="button" onClick={() => changeMonth(1)} className="px-2.5 py-1 hover:bg-slate-100 text-slate-700 font-bold text-xs border-l border-slate-300 transition-colors">〉</button>
-                </div>
+            
+            {/* 【右ブロック】稼働集計時間显示 ＆ 締め提出ボタン */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:justify-end flex-1 w-full">
+              <div className="space-y-0.5 text-left sm:text-right">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  表示月の合計稼働時間
+                </span>
+                <p className="text-lg font-black text-[#0082C8] font-mono tracking-tight leading-none">
+                  {formatTextTime(monthlyTotalSeconds)}
+                </p>
               </div>
               
-              {/* 【右ブロック】稼働集計時間显示 ＆ 締め提出ボタン */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:justify-end flex-1 w-full">
-                <div className="space-y-0.5 text-left sm:text-right">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                    表示月の合計稼働時間
-                  </span>
-                  <p className="text-lg font-black text-[#0082C8] font-mono tracking-tight leading-none">
-                    {formatTextTime(monthlyTotalSeconds)}
-                  </p>
-                </div>
-                
-                <div className="flex shrink-0">
-                  {monthlyStatus === "confirmed" ? (
-                    <div className="bg-emerald-50 text-emerald-700 border-2 border-emerald-300 text-[10px] font-black px-4 py-2 rounded text-center shadow-inner select-none whitespace-nowrap">
-                      ✓ 実績提出済み
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setModalOpen(true)} 
-                      disabled={submitting || monthlyTotalSeconds === 0}
-                      className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white text-[11px] font-black px-4 py-2 rounded border border-black/10 shadow-sm transition-all active:scale-95 disabled:opacity-30 whitespace-nowrap text-center"
-                    >
-                      🔒 確定して実績を提出
-                    </button>
-                  )}
-                </div>
+              <div className="flex shrink-0">
+                {monthlyStatus === "confirmed" ? (
+                  <div className="bg-emerald-50 text-emerald-700 border-2 border-emerald-300 text-[10px] font-black px-4 py-2 rounded text-center shadow-inner select-none whitespace-nowrap">
+                    ✓ 実績提出済み
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(true)} 
+                    disabled={submitting || monthlyTotalSeconds === 0}
+                    className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white text-[11px] font-black px-4 py-2 rounded border border-black/10 shadow-sm transition-all active:scale-95 disabled:opacity-30 whitespace-nowrap text-center"
+                  >
+                    🔒 確定して実績を提出
+                  </button>
+                )}
               </div>
-
             </div>
 
           </div>
         </div>
 
-        {/* 2. タイムラインテーブル */}
-        <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
-          <div className="grid grid-cols-[90px_1fr] bg-slate-100 border-b-2 border-slate-300 text-xs font-black text-slate-700 px-4 py-2.5">
+        {/* 👥 【下部エリア：日次明細コンテナ】ここだけが独立して縦スクロールします */}
+        <div className="bg-white border-2 border-slate-300 rounded shadow-sm flex flex-col min-h-0 flex-1 overflow-hidden">
+          
+          {/* テーブルのヘッダー軸（ここもスクロールせずに最上部にガチッと固定！） */}
+          <div className="grid grid-cols-[90px_1fr] bg-slate-100 border-b-2 border-slate-300 text-xs font-black text-slate-700 px-4 py-2.5 shrink-0 select-none">
             <div className="border-r border-slate-300">日付軸</div>
             <div className="pl-6">打刻明細 / 稼働内容</div>
           </div>
 
-          <div className="divide-y-2 divide-slate-200">
+          {/* 📅 【動的スクロール本体】日次記録の一覧だけが、この中でスムーズにスクロールします */}
+          <div className="divide-y-2 divide-slate-200 overflow-y-auto flex-1 bg-white">
             {calendarDays.map((date) => {
               const day = date.getDate();
               const weekDay = date.getDay();
