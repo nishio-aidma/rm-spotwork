@@ -11,9 +11,9 @@ export default function OwnerJobsPage() {
   const [allJobs, setAllJobs] = useState<any[]>([]); 
   const [filteredJobs, setFilteredJobs] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
+  const [userMap, setUserMap] = useState<{ [key: string]: string }>({}); // 💡 ワーカー名引換用の辞書ステートを新設
 
   // 現在アクティブな大分類タブを管理するステート
-  // 'recruiting': 募集中・下書き / 'working': 請負中・稼働中 / 'completed': 納品済・完了
   const [activeTab, setActiveTab] = useState<'recruiting' | 'working' | 'completed'>('recruiting');
 
   // 絞り込みフィルターの選択状態
@@ -34,19 +34,29 @@ export default function OwnerJobsPage() {
     return `${y}-${m}-${d}`;
   };
 
-  // 案件を一括取得
+  // 案件とワーカー名簿を一括取得
   const fetchOwnerJobs = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, "jobs"));
-      const snap = await getDocs(q);
+      // 💡 jobs（案件）と users（全ユーザー）を並列で爆速一括取得
+      const [jobSnap, userSnap] = await Promise.all([
+        getDocs(query(collection(db, "jobs"))),
+        getDocs(collection(db, "users"))
+      ]);
+
+      // 💡 会員番号（UID）から「姓名」を一発で引ける辞書マップを自動生成
+      const uMap = Object.fromEntries(userSnap.docs.map(d => [
+        d.id, 
+        `${d.data().lastName || ""} ${d.data().firstName || ""}`.trim() || d.data().name || "不明のスタッフ"
+      ]));
+      setUserMap(uMap);
+
       const todayStr = getTodayStr();
       
-      const jobList = snap.docs.map(d => {
+      const jobList = jobSnap.docs.map(d => {
         const data = d.data() as any;
         let currentStatus = data.status || "draft";
 
-        // 募集中のまま期日が今日を過ぎていたら、動的に「期限切れ」として扱う自動仕分けインフラ
         if (currentStatus === "open" && data.deadline && data.deadline < todayStr) {
           currentStatus = "expired";
         }
@@ -92,7 +102,6 @@ export default function OwnerJobsPage() {
   useEffect(() => {
     let result = [...allJobs];
 
-    // 1. 3大分類タブでのプライマリフィルタリング
     if (activeTab === "recruiting") {
       result = result.filter(job => job.status === "open" || job.status === "draft" || job.status === "expired");
     } else if (activeTab === "working") {
@@ -101,17 +110,14 @@ export default function OwnerJobsPage() {
       result = result.filter(job => job.status === "review" || job.status === "completed");
     }
 
-    // 2. セレクトボックスによるステータス詳細絞り込み
     if (filterStatus !== "all") {
       result = result.filter(job => job.status === filterStatus);
     }
 
-    // 3. 仕事種別での絞り込み
     if (filterJobType !== "all") {
       result = result.filter(job => job.jobType === filterJobType);
     }
 
-    // 4. 緊急度での絞り込み
     if (filterUrgency !== "all") {
       result = result.filter(job => job.urgency === filterUrgency);
     }
@@ -180,7 +186,7 @@ export default function OwnerJobsPage() {
               表示件数: <span className="text-lg text-[#0082C8] font-black">{filteredJobs.length}</span> / {allJobs.length} 件
             </div>
 
-            {/* オーナー用 3大進捗フェーズ切り替えタブ */}
+            {/* 進捗フェーズ切り替えタブ */}
             <div className="flex bg-slate-100 p-1 rounded border border-slate-300 gap-1 select-none">
               <button
                 type="button"
@@ -297,17 +303,19 @@ export default function OwnerJobsPage() {
         {/* 2. 現場特化型データテーブル */}
         <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse table-auto text-xs">
+            {/* 💡 table-auto から table-fixed に変更。横幅をガチッと固定し、スクロール時のガタつきを完全破壊 */}
+            <table className="w-full text-left border-collapse table-fixed text-xs min-w-[1000px]">
               <thead className="bg-slate-100 border-b-2 border-slate-300 text-slate-700 font-black">
                 <tr>
                   <th className="p-3 border-r border-slate-300 w-24">ステータス</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
-                  <th className="p-3 border-r border-slate-300 w-28">仕事種別</th>
+                  <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
+                  <th className="p-3 border-r border-slate-300 w-40">担当スタッフ</th> {/* 💡新設カラム！ */}
                   <th className="p-3 border-r border-slate-300">案件タイトル</th>
-                  <th className="p-3 border-r border-slate-300 w-28">期日</th>
-                  <th className="p-3 border-r border-slate-300 w-48">SCクライアント</th>
-                  <th className="p-3 border-r border-slate-300 w-24 text-right">予定数</th>
-                  <th className="p-3 w-28 text-center">操作</th>
+                  <th className="p-3 border-r border-slate-300 w-28 text-center">期日</th>
+                  <th className="p-3 border-r border-slate-300 w-44">SCクライアント</th>
+                  <th className="p-3 border-r border-slate-300 w-20 text-right">予定数</th>
+                  <th className="p-3 w-12 text-center">操作</th> {/* 💡 w-28 から w-12 へ限界までスリム圧縮 */}
                 </tr>
               </thead>
               
@@ -360,8 +368,17 @@ export default function OwnerJobsPage() {
                         </span>
                       </td>
 
+                      {/* 💡【新設】担当スタッフ表示セル（募集中・下書きの時はハイフンで美しく統一） */}
+                      <td className="p-3 border-r border-slate-200 font-bold text-slate-700 truncate" title={job.workerId ? (userMap[job.workerId] || "不明のスタッフ") : "-"}>
+                        {job.workerId ? (
+                          userMap[job.workerId] || "不明のスタッフ"
+                        ) : (
+                          <span className="text-slate-300 font-normal select-none">-</span>
+                        )}
+                      </td>
+
                       {/* 案件タイトル */}
-                      <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate max-w-xs" title={job.title}>
+                      <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={job.title}>
                         <Link 
                           href={`/owner/jobs/${job.id}`} 
                           className="hover:underline hover:text-[#0082C8] transition-colors block w-full truncate"
@@ -380,7 +397,7 @@ export default function OwnerJobsPage() {
                       </td>
 
                       {/* SCクライアント */}
-                      <td className="p-3 border-r border-slate-200 text-slate-600 truncate max-w-[180px]" title={job.scClient}>
+                      <td className="p-3 border-r border-slate-200 text-slate-600 truncate" title={job.scClient}>
                         {job.scClient || "-"}
                       </td>
 
@@ -389,15 +406,12 @@ export default function OwnerJobsPage() {
                         {job.count || 0} 件
                       </td>
 
-                      {/* 操作エリア */}
-                      <td className="p-3 text-center flex items-center justify-center gap-3">
-                        <Link href={`/owner/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">
-                          詳細 →
-                        </Link>
+                      {/* 💡 操作エリア：ゴミ箱アイコンのみへ極限スリム化！ */}
+                      <td className="p-3 text-center flex items-center justify-center">
                         <button
                           type="button"
                           onClick={() => triggerDeleteModal(job.id, job.title)}
-                          className="text-slate-300 hover:text-rose-600 transition-colors p-1"
+                          className="text-slate-300 hover:text-rose-600 transition-colors p-1 text-sm active:scale-95"
                           title="この案件をデータベースから完全削除"
                         >
                           🗑️
