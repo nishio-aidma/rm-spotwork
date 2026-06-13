@@ -15,11 +15,13 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
   const pathname = usePathname();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+  // 💡【変更点】「データ出力」のすぐ下に「稼働管理」を完璧にセットしました！
   const navigation = [
     { name: 'ダッシュ', href: '/owner/dashboard', icon: '📊' },
     { name: '案件管理', href: '/owner/jobs', icon: '📁' },
     { name: 'ワーカー', href: '/owner/users', icon: '👥' }, 
     { name: 'データ出力', href: '/owner/export', icon: '📥' },
+    { name: '稼働管理', href: '/owner/work-management', icon: '🛠️' }, // 💡 新設！
     { name: 'システム設定', href: '/owner/settings', icon: '⚙️' },
   ];
 
@@ -40,7 +42,7 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
       <header className="h-14 bg-[#0082C8] flex items-center px-4 justify-between text-white shadow-sm z-10 flex-shrink-0">
         <div className="flex items-center gap-4">
           
-          {/* 💡【プロ仕様ロゴリフォーム】高級感のあるエンブレム座布団とシンボルマークのドッキング */}
+          {/* 【プロ仕様ロゴリフォーム】高級感のあるエンブレム座布団とシンボルマークのドッキング */}
           <div className="bg-gradient-to-br from-white/18 to-white/4 px-3 py-1 rounded-md border border-white/25 flex items-center gap-2 select-none shadow-inner backdrop-blur-xs">
             <span className="text-xl filter drop-shadow-sm leading-none animate-pulse">⏱️</span>
             <div className="flex flex-col justify-center">
