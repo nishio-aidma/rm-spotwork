@@ -11,9 +11,9 @@ export default function OwnerJobsPage() {
   const [allJobs, setAllJobs] = useState<any[]>([]); 
   const [filteredJobs, setFilteredJobs] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
-  const [userMap, setUserMap] = useState<{ [key: string]: string }>({}); // 💡 ワーカー名引換用の辞書ステートを新設
+  const [userMap, setUserMap] = useState<{ [key: string]: string }>({});
 
-  // 現在アクティブな大分類タブを管理するステート
+  // 'recruiting': 募集中・下書き / 'working': 請負中・稼働中 / 'completed': 納品済・完了
   const [activeTab, setActiveTab] = useState<'recruiting' | 'working' | 'completed'>('recruiting');
 
   // 絞り込みフィルターの選択状態
@@ -21,11 +21,9 @@ export default function OwnerJobsPage() {
   const [filterJobType, setFilterJobType] = useState<string>("all");
   const [filterUrgency, setFilterUrgency] = useState<string>("all");
 
-  // カスタムモーダルポップアップ用の状態管理
   const [modalOpen, setModalOpen] = useState(false);
   const [targetJob, setTargetJob] = useState<{ id: string; title: string } | null>(null);
 
-  // 今日の日付文字列（YYYY-MM-DD）を取得するヘルパー関数
   const getTodayStr = () => {
     const today = new Date();
     const y = today.getFullYear();
@@ -34,17 +32,14 @@ export default function OwnerJobsPage() {
     return `${y}-${m}-${d}`;
   };
 
-  // 案件とワーカー名簿を一括取得
   const fetchOwnerJobs = async () => {
     setLoading(true);
     try {
-      // 💡 jobs（案件）と users（全ユーザー）を並列で爆速一括取得
       const [jobSnap, userSnap] = await Promise.all([
         getDocs(query(collection(db, "jobs"))),
         getDocs(collection(db, "users"))
       ]);
 
-      // 💡 会員番号（UID）から「姓名」を一発で引ける辞書マップを自動生成
       const uMap = Object.fromEntries(userSnap.docs.map(d => [
         d.id, 
         `${d.data().lastName || ""} ${d.data().firstName || ""}`.trim() || d.data().name || "不明のスタッフ"
@@ -64,7 +59,6 @@ export default function OwnerJobsPage() {
         return { id: d.id, ...data, status: currentStatus };
       });
       
-      // 【期日（deadline）が近い順】に並び替え
       jobList.sort((a: any, b: any) => {
         const deadlineA = a.deadline && typeof a.deadline === "string" && a.deadline.trim() !== "" ? a.deadline : "9999-12-31";
         const deadlineB = b.deadline && typeof b.deadline === "string" && b.deadline.trim() !== "" ? b.deadline : "9999-12-31";
@@ -98,7 +92,6 @@ export default function OwnerJobsPage() {
     return () => unsubscribe();
   }, []);
 
-  // 大分類タブ ＆ トリプルフィルター掛け連動ロジック
   useEffect(() => {
     let result = [...allJobs];
 
@@ -303,19 +296,18 @@ export default function OwnerJobsPage() {
         {/* 2. 現場特化型データテーブル */}
         <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            {/* 💡 table-auto から table-fixed に変更。横幅をガチッと固定し、スクロール時のガタつきを完全破壊 */}
             <table className="w-full text-left border-collapse table-fixed text-xs min-w-[1000px]">
               <thead className="bg-slate-100 border-b-2 border-slate-300 text-slate-700 font-black">
                 <tr>
                   <th className="p-3 border-r border-slate-300 w-24">ステータス</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
                   <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
-                  <th className="p-3 border-r border-slate-300 w-40">担当スタッフ</th> {/* 💡新設カラム！ */}
+                  <th className="p-3 border-r border-slate-300 w-28">担当スタッフ</th>
                   <th className="p-3 border-r border-slate-300">案件タイトル</th>
+                  <th className="p-3 border-r border-slate-300 w-20 text-right">件数</th> {/* 💡「予定数」から移動＆「件数」にリネーム */}
                   <th className="p-3 border-r border-slate-300 w-28 text-center">期日</th>
                   <th className="p-3 border-r border-slate-300 w-44">SCクライアント</th>
-                  <th className="p-3 border-r border-slate-300 w-20 text-right">予定数</th>
-                  <th className="p-3 w-12 text-center">操作</th> {/* 💡 w-28 から w-12 へ限界までスリム圧縮 */}
+                  <th className="p-3 w-12 text-center">操作</th>
                 </tr>
               </thead>
               
@@ -325,8 +317,6 @@ export default function OwnerJobsPage() {
 
                   return (
                     <tr key={job.id} className="hover:bg-slate-50 transition-colors">
-                      
-                      {/* ステータスバッジ */}
                       <td className="p-3 border-r border-slate-200">
                         <span className={`px-2 py-0.5 border text-[10px] font-black rounded block text-center uppercase ${
                           job.status === 'open' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
@@ -350,7 +340,6 @@ export default function OwnerJobsPage() {
                         </span>
                       </td>
 
-                      {/* 緊急度 */}
                       <td className="p-3 border-r border-slate-300 text-center">
                         {job.urgency === "3" ? (
                           <span className="bg-rose-50 text-rose-700 border border-rose-300 font-black px-1.5 py-0.5 rounded text-[10px] uppercase block animate-pulse">至急</span>
@@ -361,14 +350,12 @@ export default function OwnerJobsPage() {
                         )}
                       </td>
 
-                      {/* 仕事種別 */}
                       <td className="p-3 border-r border-slate-200">
                         <span className="bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded text-[11px] font-bold block text-center">
                           {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト作成'}
                         </span>
                       </td>
 
-                      {/* 💡【新設】担当スタッフ表示セル（募集中・下書きの時はハイフンで美しく統一） */}
                       <td className="p-3 border-r border-slate-200 font-bold text-slate-700 truncate" title={job.workerId ? (userMap[job.workerId] || "不明のスタッフ") : "-"}>
                         {job.workerId ? (
                           userMap[job.workerId] || "不明のスタッフ"
@@ -377,7 +364,6 @@ export default function OwnerJobsPage() {
                         )}
                       </td>
 
-                      {/* 案件タイトル */}
                       <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={job.title}>
                         <Link 
                           href={`/owner/jobs/${job.id}`} 
@@ -387,26 +373,24 @@ export default function OwnerJobsPage() {
                         </Link>
                       </td>
 
-                      {/* 期日 */}
-                      <td className={`p-3 border-r border-slate-200 font-mono font-bold text-center ${
-                        isUrgentDeadline 
-                          ? 'bg-rose-100 text-rose-900 border-2 border-rose-300 rounded animate-pulse' 
-                          : 'text-slate-600'
-                      }`}>
-                        {job.deadline ? job.deadline : <span className="text-slate-300 font-normal">未設定</span>}
-                      </td>
-
-                      {/* SCクライアント */}
-                      <td className="p-3 border-r border-slate-200 text-slate-600 truncate" title={job.scClient}>
-                        {job.scClient || "-"}
-                      </td>
-
-                      {/* 予定数 */}
-                      <td className="p-3 border-r border-slate-200 text-right font-mono font-bold">
+                      {/* 💡【移動＆サイズ拡大】「件数」をここに挟み込み、text-sm & font-black で数字の視認性を爆上げ！ */}
+                      <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-slate-700">
                         {job.count || 0} 件
                       </td>
 
-                      {/* 💡 操作エリア：ゴミ箱アイコンのみへ極限スリム化！ */}
+                      {/* 💡【サイズ拡大】「期日」も text-sm & font-black に引き上げ、スケジュールの見落としを完全破壊！ */}
+                      <td className={`p-3 border-r border-slate-200 font-mono font-black text-center text-sm ${
+                        isUrgentDeadline 
+                          ? 'bg-rose-100 text-rose-950 border-2 border-rose-300 rounded animate-pulse' 
+                          : 'text-slate-600'
+                      }`}>
+                        {job.deadline ? job.deadline : <span className="text-slate-300 font-normal text-xs">未設定</span>}
+                      </td>
+
+                      <td className="p-3 border-r border-slate-200 text-slate-600 truncate">
+                        {job.scClient || "-"}
+                      </td>
+
                       <td className="p-3 text-center flex items-center justify-center">
                         <button
                           type="button"
@@ -417,7 +401,6 @@ export default function OwnerJobsPage() {
                           🗑️
                         </button>
                       </td>
-
                     </tr>
                   );
                 })}
