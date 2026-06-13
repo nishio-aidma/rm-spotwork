@@ -15,14 +15,14 @@ export default function OwnerWorkersPage() {
   // 大分類タブを管理するステート ('directory': 登録状況 / 'calendar': カレンダー状況)
   const [activeTab, setActiveTab] = useState<'directory' | 'calendar'>('directory');
 
-  // 💡【新設】ダッシュボードでおなじみの、表示する「基準月」を管理する日付オブジェクト
+  // 💡表示する「基準月」を管理する日付オブジェクト
   const [viewDate, setViewDate] = useState<Date>(new Date());
 
   // 本物のGoogleカレンダーから吸い上げたリアルタイム予定を保管するステート
   const [realCalendarEvents, setRealCalendarEvents] = useState<any[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
 
-  // 💡【進化】選択された基準月（viewDate）の「1日」から「末日」までの全日付を配列として動的に自動生成
+  // 💡選択された基準月（viewDate）の「1日」から「末日」までの全日付を配列として動的に自動生成
   const getDaysInMonthArray = (targetDate: Date) => {
     const days = [];
     const year = targetDate.getFullYear();
@@ -75,7 +75,7 @@ export default function OwnerWorkersPage() {
     }
   };
 
-  // 💡【進化】選択された月の「1日の00:00」から「末日の23:59」までを指定してAPIへ一括通信
+  // 💡選択された月の「1日の00:00」から「末日の23:59」までを指定してAPIへ一括通信
   const fetchGoogleCalendarSchedules = async (workerList: any[], targetDate: Date) => {
     if (workerList.length === 0) return;
     setCalendarLoading(true);
@@ -86,7 +86,7 @@ export default function OwnerWorkersPage() {
       const month = targetDate.getMonth();
       const totalDays = new Date(year, month + 1, 0).getDate();
 
-      // 日本時間（+09:00）で、その月の1日から末日までをガツンと指定
+      // 日本時間（+09:00）で、その月の1日から末日までを指定
       const timeMin = new Date(`${year}-${String(month + 1).padStart(2, "0")}-01T00:00:00+09:00`);
       const timeMax = new Date(`${year}-${String(month + 1).padStart(2, "0")}-${String(totalDays).padStart(2, "0")}T23:59:59+09:00`);
 
@@ -210,11 +210,13 @@ export default function OwnerWorkersPage() {
               
               <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse table-auto">
+                  {/* 💡【変更】table-auto を table-fixed に変更。全列の横幅をガチッと固定して上下を揃えます */}
+                  <table className="w-full text-left border-collapse table-fixed min-w-[800px]">
                     <thead className="bg-slate-100 border-b-2 border-slate-300 text-xs text-slate-700 font-black">
                       <tr>
                         <th className="p-3 border-r border-slate-300 w-28 text-center">権限区分</th>
-                        <th className="p-3 border-r border-slate-300">スタッフ氏名</th>
+                        <th className="p-3 border-r border-slate-300 w-48">スタッフ氏名</th>
+                        {/* 💡 連絡先カラムの w- は未指定にすることで、残りの画面幅をダイナミックに100%吸い取らせて上下を揃えます */}
                         <th className="p-3 border-r border-slate-300">連絡先（メールアドレス）</th>
                         <th className="p-3 border-r border-slate-300 w-44">システム登録日</th>
                         <th className="p-3 w-28 text-center">操作</th>
@@ -229,11 +231,11 @@ export default function OwnerWorkersPage() {
                             <td className="p-3 border-r border-slate-200">
                               <span className="bg-rose-50 text-rose-700 border border-rose-300 px-2 py-0.5 text-[10px] font-black rounded block text-center uppercase">オーナー</span>
                             </td>
-                            <td className="p-3 border-r border-slate-200 font-bold text-slate-900">
+                            <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>
                               {fullName} {isMe && <span className="text-[10px] text-slate-400 font-normal">（あなた）</span>}
                             </td>
-                            <td className="p-3 border-r border-slate-200 text-slate-600 font-mono">{u.email}</td>
-                            <td className="p-3 border-r border-slate-200 text-slate-500">{u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString() : "-"}</td>
+                            <td className="p-3 border-r border-slate-200 text-slate-600 font-mono truncate" title={u.email}>{u.email}</td>
+                            <td className="p-3 border-r border-slate-200 text-slate-500 truncate">{u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString() : "-"}</td>
                             <td className="p-3 text-center flex items-center justify-center gap-3">
                               <Link href={`/owner/users/${u.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">詳細 →</Link>
                               {!isMe ? (
@@ -258,11 +260,12 @@ export default function OwnerWorkersPage() {
 
               <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse table-auto">
+                  {/* 💡【変更】上のテーブルと「全く同じ横幅の設定」を適用。これにより1ミリのズレもなく美しく整列します */}
+                  <table className="w-full text-left border-collapse table-fixed min-w-[800px]">
                     <thead className="bg-slate-100 border-b-2 border-slate-300 text-xs text-slate-700 font-black">
                       <tr>
                         <th className="p-3 border-r border-slate-300 w-28 text-center">権限区分</th>
-                        <th className="p-3 border-r border-slate-300">スタッフ氏名</th>
+                        <th className="p-3 border-r border-slate-300 w-48">スタッフ氏名</th>
                         <th className="p-3 border-r border-slate-300">連絡先（メールアドレス）</th>
                         <th className="p-3 border-r border-slate-300 w-44">システム登録日</th>
                         <th className="p-3 w-28 text-center">操作</th>
@@ -276,9 +279,9 @@ export default function OwnerWorkersPage() {
                             <td className="p-3 border-r border-slate-200">
                               <span className="bg-blue-50 text-blue-700 border border-blue-300 px-2 py-0.5 text-[10px] font-black rounded block text-center uppercase">ワーカー</span>
                             </td>
-                            <td className="p-3 border-r border-slate-200 font-bold text-slate-900">{fullName}</td>
-                            <td className="p-3 border-r border-slate-200 text-slate-600 font-mono">{u.email}</td>
-                            <td className="p-3 border-r border-slate-200 text-slate-500">{u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString() : "-"}</td>
+                            <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>{fullName}</td>
+                            <td className="p-3 border-r border-slate-200 text-slate-600 font-mono truncate" title={u.email}>{u.email}</td>
+                            <td className="p-3 border-r border-slate-200 text-slate-500 truncate">{u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString() : "-"}</td>
                             <td className="p-3 text-center flex items-center justify-center gap-3">
                               <Link href={`/owner/users/${u.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">詳細 →</Link>
                               <button onClick={() => handleDeleteUser(u.id, fullName)} className="text-slate-300 hover:text-rose-600 transition-colors p-1" title="削除">🗑️</button>
@@ -304,7 +307,6 @@ export default function OwnerWorkersPage() {
         {activeTab === 'calendar' && (
           <div className="space-y-3 animate-fade-in">
             
-            {/* 💡【超絶カイゼン】〈 〉ボタンで「何月度」でも自由自在に無限移動できる特製コントロールコンソール */}
             <div className="bg-slate-900 text-white p-3 rounded border border-slate-800 flex justify-between items-center shadow-sm select-none">
               <div className="flex items-center gap-2">
                 <button 
@@ -347,10 +349,8 @@ export default function OwnerWorkersPage() {
 
             <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
-                {/* 💡選択された月の日数に合わせて、横スクロール幅を自動調整するフルード設計 */}
                 <table className="w-full text-left border-collapse table-fixed min-w-[3000px]">
                   
-                  {/* テーブルヘッダー（1日～末日までのマトリクス） */}
                   <thead className="bg-slate-100 border-b-2 border-slate-300 text-xs text-slate-700 font-black">
                     <tr>
                       <th className="p-3 border-r border-slate-300 w-44 bg-slate-100 sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">スタッフ氏名</th>
@@ -368,20 +368,17 @@ export default function OwnerWorkersPage() {
                     </tr>
                   </thead>
 
-                  {/* タイムラインボディ */}
                   <tbody className="divide-y divide-slate-200 text-xs text-slate-800 font-medium">
                     {workers.map((worker) => {
                       const fullName = `${worker.lastName || ""} ${worker.firstName || worker.name || "不明"}`;
                       
                       return (
                         <tr key={worker.id} className="hover:bg-slate-50/60 transition-colors">
-                          {/* 左端固定のスタッフ名カラム */}
                           <td className="p-3 border-r border-slate-200 font-bold text-slate-900 bg-white sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
                             <div className="truncate" title={fullName}>{fullName}</div>
                             <div className="text-[9px] text-slate-400 font-mono font-normal truncate mt-0.5">{worker.email}</div>
                           </td>
 
-                          {/* その月の日数分の本物スケジュールをマッピング */}
                           {daysRange.map((day) => {
                             const matchedEvents = realCalendarEvents.filter(
                               (ev) => ev.workerEmail === worker.email && ev.date === day.ymd
