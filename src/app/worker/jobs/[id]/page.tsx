@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import { doc, getDoc, updateDoc, serverTimestamp, setDoc, deleteDoc, collection, addDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth"; // 💡 認証状態をリアルタイム監視するために追加
 import WorkerShell from "@/components/WorkerShell";
 import Link from "next/link";
 import Image from "next/image";
@@ -19,6 +20,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [isWished, setIsWished] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null); // 💡 ログインユーザーを確実に保持するステートを新設
 
   // カスタムポップアップ（モーダル）用の管理ステート
   const [modalOpen, setModalOpen] = useState(false);
@@ -26,32 +28,40 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [modalMessage, setModalMessage] = useState("");
   const [modalActionType, setModalActionType] = useState<"accept" | "start" | "pause" | "complete" | null>(null);
 
-  // 💡【新設】コピー完了通知用のポップステート
+  // コピー完了通知用のポップステート
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // 初期データの取得
+  // 初期データの取得（💡 auth.currentUser のすれ違いバグを完全に修正）
   useEffect(() => {
-    async function fetchData() {
-      const user = auth.currentUser;
-      if (!id || !user) return;
-      try {
-        const docRef = doc(db, "jobs", id);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          setJob({ id: snap.id, ...snap.data() });
+    if (!id) return;
+
+    // Firebaseのログイン準備が100%整うのを待ってからデータを安全に取得する
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setCurrentUser(user); // 確実なユーザー情報をセット
+        try {
+          const docRef = doc(db, "jobs", id);
+          const snap = await getDoc(docRef);
+          if (snap.exists()) {
+            setJob({ id: snap.id, ...snap.data() });
+          }
+
+          // 新しい正規UIDに基づいてウィッシュリストの存在を確認
+          const wishSnap = await getDoc(doc(db, "wishlists", `${user.uid}_${id}`));
+          setIsWished(wishSnap.exists());
+        } catch (error) { 
+          console.error("データ取得エラー:", error); 
+        } finally { 
+          setLoading(false);
         }
-
-        const wishSnap = await getDoc(doc(db, "wishlists", `${user.uid}_${id}`));
-        setIsWished(wishSnap.exists());
-
-      } catch (error) { 
-        console.error(error); 
-      } finally { 
-        setLoading(false);
+      } else {
+        // ログインしていない場合はログイン画面へ
+        router.push("/login");
       }
-    }
-    fetchData();
-  }, [id]);
+    });
+
+    return () => unsubscribe();
+  }, [id, router]);
 
   // 時間を時・分・秒のきれいな文字列に変換する関数
   const formatTime = (s: number) => {
@@ -71,34 +81,34 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     return `${h}:${m}:${s}`;
   };
 
-  // 💡【新設】クリップボードへの一撃コピー関数
+  // クリップボードへの一撃コピー関数
   const handleCopyToClipboard = (text: string, fieldName: string) => {
     if (!text || text === "-") return;
     navigator.clipboard.writeText(text).then(() => {
       setCopiedField(fieldName);
-      setTimeout(() => setCopiedField(null), 1000); // 1秒後に自動で消す
+      setTimeout(() => setCopiedField(null), 1000); 
     }).catch(err => console.error("コピー失敗:", err));
   };
 
   const handleToggleWish = async () => {
-    const user = auth.currentUser;
-    if (!user || !job) return;
+    if (!currentUser || !job) return;
     
-    const wishRef = doc(db, "wishlists", `${user.uid}_${job.id}`);
+    // 新しい正規UIDでウィッシュリストのドキュメントパスを作成
+    const wishRef = doc(db, "wishlists", `${currentUser.uid}_${job.id}`);
     try {
       if (isWished) {
         await deleteDoc(wishRef);
         setIsWished(false);
       } else {
         await setDoc(wishRef, {
-          workerId: user.uid,
+          workerId: currentUser.uid,
           jobId: job.id,
           createdAt: new Date()
         });
         setIsWished(true);
       }
     } catch (e) {
-      console.error(e);
+      console.error("ウィッシュリスト登録エラー:", e);
     }
   };
 
@@ -124,17 +134,16 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   // ポップアップ内で「はい、実行する」を押したときの確定処理
   const handleModalConfirm = async () => {
     setModalOpen(false);
-    if (!modalActionType || !job) return;
+    if (!modalActionType || !job || !currentUser) return;
 
     setSubmitting(true);
     try {
       const jobRef = doc(db, "jobs", job.id);
-      const user = auth.currentUser;
       const now = new Date();
 
       if (modalActionType === "accept") {
         await updateDoc(jobRef, {
-          workerId: user?.uid,
+          workerId: currentUser.uid, // 💡 新しい正規UIDで案件をガチッと紐付け
           status: "assigned",
           updatedAt: serverTimestamp()
         });
@@ -172,9 +181,9 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           updatedAt: serverTimestamp()
         });
 
-        if (user && sessionSeconds > 0) {
+        if (sessionSeconds > 0) {
           await addDoc(collection(db, "workLogs"), {
-            workerId: user.uid,
+            workerId: currentUser.uid,
             jobId: job.id,
             jobTitle: job.title || "",
             seconds: sessionSeconds,
@@ -207,9 +216,9 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           updatedAt: serverTimestamp()
         });
 
-        if (user && sessionSeconds > 0) {
+        if (sessionSeconds > 0) {
           await addDoc(collection(db, "workLogs"), {
-            workerId: user.uid,
+            workerId: currentUser.uid,
             jobId: job.id,
             jobTitle: job.title || "",
             seconds: sessionSeconds,
@@ -231,7 +240,8 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   if (loading) return <WorkerShell title="読み込み中"><div className="p-10 text-center text-slate-400 text-xs font-bold">データを取得中...</div></WorkerShell>;
   if (!job) return <WorkerShell title="エラー"><div className="p-10 text-center text-rose-600 font-bold text-xs">案件が見つかりませんでした。</div></WorkerShell>;
 
-  const isMyJob = job.workerId === auth.currentUser?.uid;
+  // 💡 確実に確定した currentUser.uid との比較に修正
+  const isMyJob = job.workerId === currentUser?.uid;
 
   return (
     <WorkerShell title="案件詳細" subTitle="業務内容の確認と打刻">
@@ -257,7 +267,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </div>
           </div>
 
-          {/* 💡【修正】ワーカー側：案件タイトルのコピーボタン実装 */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 shadow-sm relative group">
             <div className="flex items-start justify-between gap-4">
               <h1 className="text-base font-black tracking-tight text-slate-950 leading-snug flex-1">{job.title}</h1>
@@ -290,7 +299,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               </div>
             </div>
 
-            {/* 💡【修正】ワーカー側：SCクライアント名のコピーボタン実装 */}
             <div className="p-3 flex flex-col justify-between min-h-[72px] relative group">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント</span>
               <div className="flex items-center justify-between gap-2 mt-auto w-full">
@@ -435,7 +443,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                     disabled={submitting}
                     className="w-full py-3 bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-50"
                   >
-                    この案件を引き受ける
+                    {job.status === 'open' ? 'この案件を引き受ける' : '他の方が受諾済みの案件です'}
                   </button>
                 ) : (
                   <>
