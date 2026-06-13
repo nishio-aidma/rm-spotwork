@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { collection, query, getDocs, where, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth"; // 💡 認証のすれ違いを防ぐために追加
 import WorkerShell from "@/components/WorkerShell";
 import Link from "next/link";
 
@@ -12,9 +13,10 @@ export default function WorkerJobsPage() {
   const [wishlistIds, setWishlistIds] = useState<string[]>([]);
   const [wishJobs, setWishJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null); // 💡 ログインユーザーを確実に保持するステート
 
-  const fetchData = async () => {
-    const user = auth.currentUser;
+  // ログイン情報確定後にデータを安全に一括ロードする関数
+  const fetchJobsAndWishlist = async (userId: string) => {
     try {
       const jobSnap = await getDocs(collection(db, "jobs"));
       const allJobs = jobSnap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
@@ -36,11 +38,9 @@ export default function WorkerJobsPage() {
 
       const openJobs = allJobs.filter((j: any) => j.status === "open");
 
-      let wishes: string[] = [];
-      if (user) {
-        const wishSnap = await getDocs(query(collection(db, "wishlists"), where("workerId", "==", user.uid)));
-        wishes = wishSnap.docs.map(d => d.data().jobId);
-      }
+      // 💡 userIdを引数から確実に受け取ってウィッシュリストを直撃取得
+      const wishSnap = await getDocs(query(collection(db, "wishlists"), where("workerId", "==", userId)));
+      const wishes = wishSnap.docs.map(d => d.data().jobId);
 
       const wishedJobData = allJobs.filter((j: any) => wishes.includes(j.id) && j.status === "open");
 
@@ -55,15 +55,23 @@ export default function WorkerJobsPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    // 💡 画面起動時にFirebaseの認証完了イベントをガチッとフックして待ち受ける
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setCurrentUser(user);
+        fetchJobsAndWishlist(user.uid);
+      } else {
+        setLoading(false);
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   const toggleWish = async (e: React.MouseEvent, jobId: string) => {
     e.preventDefault();
-    const user = auth.currentUser;
-    if (!user) return;
+    if (!currentUser) return;
 
-    const wishDocId = `${user.uid}_${jobId}`;
+    const wishDocId = `${currentUser.uid}_${jobId}`;
     const wishRef = doc(db, "wishlists", wishDocId);
     const isWished = wishlistIds.includes(jobId);
 
@@ -74,7 +82,7 @@ export default function WorkerJobsPage() {
         setWishJobs(prev => prev.filter(j => j.id !== jobId));
       } else {
         await setDoc(wishRef, {
-          workerId: user.uid,
+          workerId: currentUser.uid,
           jobId: jobId,
           createdAt: new Date()
         });
@@ -93,13 +101,13 @@ export default function WorkerJobsPage() {
     <WorkerShell title="案件を探す" subTitle="現在募集中の業務一覧およびキープ中の案件">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* タブ切り替え */}
-        <div className="grid grid-cols-2 bg-white border-2 border-slate-300 rounded p-1 gap-1 shadow-sm select-none">
+        {/* 上部：2大タブ（1ミリも揺れない統一デザイン） */}
+        <div className="grid grid-cols-2 bg-white border-2 border-slate-300 rounded p-1 gap-1 shadow-sm select-none h-11 items-stretch">
           <button 
             type="button"
             onClick={() => setActiveTab('all')}
-            className={`py-2 text-center text-xs font-black rounded transition-colors ${
-              activeTab === 'all' ? 'bg-[#0082C8] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+            className={`text-center text-xs font-black rounded transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'all' ? 'bg-[#0082C8] text-white shadow-inner' : 'bg-white text-slate-600 hover:bg-slate-50'
             }`}
           >
             🔍 募集中の案件 ({jobs.length})
@@ -107,8 +115,8 @@ export default function WorkerJobsPage() {
           <button 
             type="button"
             onClick={() => setActiveTab('wishlist')}
-            className={`py-2 text-center text-xs font-black rounded transition-colors ${
-              activeTab === 'wishlist' ? 'bg-amber-400 text-slate-900' : 'bg-white text-slate-600 hover:bg-slate-50'
+            className={`text-center text-xs font-black rounded transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'wishlist' ? 'bg-amber-400 text-slate-900 shadow-inner' : 'bg-white text-slate-600 hover:bg-slate-50'
             }`}
           >
             ★ ウィッシュリスト ({wishJobs.length})
@@ -119,28 +127,27 @@ export default function WorkerJobsPage() {
         {activeTab === 'all' && (
           <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse table-auto text-xs">
+              {/* table-fixedに変更し、列の比率を他の画面と完全同期 */}
+              <table className="w-full text-left border-collapse table-fixed text-xs min-w-[1000px]">
                 <thead className="bg-slate-100 border-b-2 border-slate-300 text-slate-700 font-black">
                   <tr>
                     <th className="p-3 border-r border-slate-300 w-12 text-center">保存</th>
                     <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
-                    <th className="p-3 border-r border-slate-300 w-28 text-center">仕事種別</th>
+                    <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
                     <th className="p-3 border-r border-slate-300">案件タイトル</th>
-                    <th className="p-3 border-r border-slate-300 w-28">期日</th>
-                    <th className="p-3 border-r border-slate-300 w-48">SCクライアント</th>
-                    <th className="p-3 border-r border-slate-300 w-24 text-right">予定数</th>
+                    <th className="p-3 border-r border-slate-300 w-20 text-right">件数</th>
+                    <th className="p-3 border-r border-slate-300 w-28 text-center">期日</th>
+                    <th className="p-3 border-r border-slate-300 w-44">SCクライアント</th>
                     <th className="p-3 w-20 text-center">操作</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 text-xs text-slate-800 font-medium">
+                <tbody className="divide-y divide-slate-200 text-xs text-slate-800 font-medium bg-white">
                   {jobs.map((job) => {
                     const isWished = wishlistIds.includes(job.id);
-                    
-                    {/* 💡【色味の不具合修正】一番薄い「50ベース」から「100ベース」へ引き上げ、黄色とピンクの存在感をクッキリ強化 */}
                     const rowBgClass = job.urgency === "3" 
-                      ? "bg-rose-100/50 hover:bg-rose-200/60" // 至急：存在感のあるクリアな薄ピンク
+                      ? "bg-rose-100/50 hover:bg-rose-200/60" 
                       : job.urgency === "2"
-                      ? "bg-amber-100/50 hover:bg-amber-200/60" // 高め：ハッキリ識別できる上品な薄黄色
+                      ? "bg-amber-100/50 hover:bg-amber-200/60" 
                       : "bg-white hover:bg-slate-50";
 
                     return (
@@ -164,9 +171,7 @@ export default function WorkerJobsPage() {
                             {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト作成'}
                           </span>
                         </td>
-                        
-                        {/* ★大改造：タイトルをクリックしても詳細へ進めるようにLink化。カーソルが合わさると青く下線が引かれます */}
-                        <td className="p-3 border-r border-slate-200 font-black text-slate-950 truncate max-w-xs">
+                        <td className="p-3 border-r border-slate-200 font-black text-slate-950 truncate">
                           <Link 
                             href={`/worker/jobs/${job.id}`} 
                             className="hover:underline hover:text-[#0082C8] transition-colors block w-full truncate"
@@ -174,14 +179,15 @@ export default function WorkerJobsPage() {
                             {job.title}
                           </Link>
                         </td>
-                        
-                        <td className="p-3 border-r border-slate-200 text-slate-700 font-mono font-bold">
-                          {job.deadline ? job.deadline : <span className="text-slate-300 font-normal">未設定</span>}
+                        <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-slate-700">
+                          {job.count || 0} 件
                         </td>
-                        <td className="p-3 border-r border-slate-200 text-slate-700 truncate max-w-[180px]" title={job.scClient}>{job.scClient || "-"}</td>
-                        <td className="p-3 border-r border-slate-200 text-right font-mono font-bold">{job.count || 0} 件</td>
+                        <td className="p-3 border-r border-slate-200 text-center font-mono font-black text-sm text-slate-600">
+                          {job.deadline ? job.deadline : <span className="text-slate-300 font-normal text-xs">未設定</span>}
+                        </td>
+                        <td className="p-3 border-r border-slate-200 text-slate-700 truncate" title={job.scClient}>{job.scClient || "-"}</td>
                         <td className="p-3 text-center">
-                          <Link href={`/worker/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">確認 →</Link>
+                          <Link href={`/worker/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black text-[11px] block active:scale-95 transition-transform">確認 →</Link>
                         </td>
                       </tr>
                     );
@@ -197,20 +203,20 @@ export default function WorkerJobsPage() {
         {activeTab === 'wishlist' && (
           <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse table-auto text-xs">
+              <table className="w-full text-left border-collapse table-fixed text-xs min-w-[1000px]">
                 <thead className="bg-amber-50 border-b-2 border-amber-300 text-slate-700 font-black">
                   <tr>
                     <th className="p-3 border-r border-amber-200 w-12 text-center">解除</th>
                     <th className="p-3 border-r border-amber-200 w-20 text-center">緊急度</th>
-                    <th className="p-3 border-r border-amber-200 w-28 text-center">仕事種別</th>
+                    <th className="p-3 border-r border-amber-200 w-26 text-center">仕事種別</th>
                     <th className="p-3 border-r border-amber-200">キープ案件名</th>
-                    <th className="p-3 border-r border-amber-200 w-28">期日</th>
-                    <th className="p-3 border-r border-amber-200 w-48">SCクライアント</th>
-                    <th className="p-3 border-r border-amber-200 w-24 text-right">予定数</th>
+                    <th className="p-3 border-r border-amber-200 w-20 text-right">件数</th>
+                    <th className="p-3 border-r border-amber-200 w-28 text-center">期日</th>
+                    <th className="p-3 border-r border-amber-200 w-44">SCクライアント</th>
                     <th className="p-3 w-20 text-center">操作</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 text-xs font-medium">
+                <tbody className="divide-y divide-slate-200 text-xs font-medium bg-white">
                   {wishJobs.map((job) => {
                     const rowBgClass = job.urgency === "3" 
                       ? "bg-rose-100/50 hover:bg-rose-200/60" 
@@ -237,9 +243,7 @@ export default function WorkerJobsPage() {
                             {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト作成'}
                           </span>
                         </td>
-                        
-                        {/* ★ウィッシュリスト側も同様にタイトルクリックでのジャンプに対応 */}
-                        <td className="p-3 border-r border-slate-200 font-black text-slate-950 truncate max-w-xs">
+                        <td className="p-3 border-r border-slate-200 font-black text-slate-950 truncate">
                           <Link 
                             href={`/worker/jobs/${job.id}`} 
                             className="hover:underline hover:text-[#0082C8] transition-colors block w-full truncate"
@@ -247,14 +251,15 @@ export default function WorkerJobsPage() {
                             {job.title}
                           </Link>
                         </td>
-                        
-                        <td className="p-3 border-r border-slate-200 text-slate-700 font-mono font-bold">
-                          {job.deadline ? job.deadline : <span className="text-slate-300 font-normal">未設定</span>}
+                        <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-slate-700">
+                          {job.count || 0} 件
                         </td>
-                        <td className="p-3 border-r border-slate-200 text-slate-700 truncate max-w-[180px]" title={job.scClient}>{job.scClient || "-"}</td>
-                        <td className="p-3 border-r border-slate-200 text-right font-mono font-bold">{job.count || 0} 件</td>
+                        <td className="p-3 border-r border-slate-200 text-center font-mono font-black text-sm text-slate-600">
+                          {job.deadline ? job.deadline : <span className="text-slate-300 font-normal text-xs">未設定</span>}
+                        </td>
+                        <td className="p-3 border-r border-slate-200 text-slate-700 truncate" title={job.scClient}>{job.scClient || "-"}</td>
                         <td className="p-3 text-center">
-                          <Link href={`/worker/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black">確認 →</Link>
+                          <Link href={`/worker/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black block active:scale-95 transition-transform">確認 →</Link>
                         </td>
                       </tr>
                     );
