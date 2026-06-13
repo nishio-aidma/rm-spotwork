@@ -15,20 +15,19 @@ export default function OwnerWorkersPage() {
   // 大分類タブを管理するステート ('directory': 登録状況 / 'calendar': カレンダー状況)
   const [activeTab, setActiveTab] = useState<'directory' | 'calendar'>('directory');
 
-  // 💡表示する「基準月」を管理する日付オブジェクト
+  // 表示する「基準月」を管理する日付オブジェクト
   const [viewDate, setViewDate] = useState<Date>(new Date());
 
   // 本物のGoogleカレンダーから吸い上げたリアルタイム予定を保管するステート
   const [realCalendarEvents, setRealCalendarEvents] = useState<any[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
 
-  // 💡選択された基準月（viewDate）の「1日」から「末日」までの全日付を配列として動的に自動生成
+  // 選択された基準月（viewDate）の「1日」から「末日」までの全日付を配列として動的に自動生成
   const getDaysInMonthArray = (targetDate: Date) => {
     const days = [];
     const year = targetDate.getFullYear();
     const month = targetDate.getMonth(); // 0-11
     
-    // その月の末日（日数）を取得
     const totalDays = new Date(year, month + 1, 0).getDate();
     const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
     
@@ -48,12 +47,10 @@ export default function OwnerWorkersPage() {
 
   const daysRange = getDaysInMonthArray(viewDate);
 
-  // 〈 〉 ボタンが押された時に、月を前後にローテーションさせる関数
   const changeMonth = (diff: number) => {
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + diff, 1));
   };
 
-  // 全アカウントを取得して新着順に並べ替える
   const fetchAllUsers = async () => {
     if (!owner) return;
     setLoading(true);
@@ -75,7 +72,6 @@ export default function OwnerWorkersPage() {
     }
   };
 
-  // 💡選択された月の「1日の00:00」から「末日の23:59」までを指定してAPIへ一括通信
   const fetchGoogleCalendarSchedules = async (workerList: any[], targetDate: Date) => {
     if (workerList.length === 0) return;
     setCalendarLoading(true);
@@ -86,7 +82,6 @@ export default function OwnerWorkersPage() {
       const month = targetDate.getMonth();
       const totalDays = new Date(year, month + 1, 0).getDate();
 
-      // 日本時間（+09:00）で、その月の1日から末日までを指定
       const timeMin = new Date(`${year}-${String(month + 1).padStart(2, "0")}-01T00:00:00+09:00`);
       const timeMax = new Date(`${year}-${String(month + 1).padStart(2, "0")}-${String(totalDays).padStart(2, "0")}T23:59:59+09:00`);
 
@@ -115,7 +110,6 @@ export default function OwnerWorkersPage() {
     if (!authLoading) fetchAllUsers();
   }, [owner, authLoading]);
 
-  // タブの切り替え時、または「月」が移動した瞬間に、裏側でリアルタイム再読み込み通信を発射
   useEffect(() => {
     if (activeTab === 'calendar' && users.length > 0) {
       const currentWorkers = users.filter((u: any) => u.role !== 'owner');
@@ -123,7 +117,6 @@ export default function OwnerWorkersPage() {
     }
   }, [activeTab, users, viewDate]);
 
-  // アカウントの完全削除ロジック
   const handleDeleteUser = async (userId: string, userName: string) => {
     if (userId === auth.currentUser?.uid) {
       alert("現在ログイン中のご自身のアカウントは削除できません。");
@@ -159,7 +152,6 @@ export default function OwnerWorkersPage() {
               登録総アカウント数: <span className="text-lg text-[#0082C8] font-black">{users.length}</span> 名
             </div>
 
-            {/* 登録状況 と カレンダー状況 を行き来するツイントグルタブ */}
             <div className="flex bg-slate-100 p-1 rounded border border-slate-300 gap-1 select-none">
               <button
                 type="button"
@@ -195,13 +187,11 @@ export default function OwnerWorkersPage() {
           </Link>
         </div>
 
-        {/* =========================================================================
-            📂 タブ分岐1：【登録状況一覧】
-            ========================================================================= */}
+        {/* 📂 タブ分岐1：【登録状況一覧】 */}
         {activeTab === 'directory' && (
           <div className="space-y-6 animate-fade-in">
             
-            {/* 【独立枠その1】👑 オーナー（管理者）アカウント台帳 */}
+            {/* 管理者アカウント台帳 */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 px-1">
                 <span className="text-xs font-black px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-300 rounded uppercase">OWNER DIRECTORY</span>
@@ -210,13 +200,11 @@ export default function OwnerWorkersPage() {
               
               <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
-                  {/* 💡【変更】table-auto を table-fixed に変更。全列の横幅をガチッと固定して上下を揃えます */}
                   <table className="w-full text-left border-collapse table-fixed min-w-[800px]">
                     <thead className="bg-slate-100 border-b-2 border-slate-300 text-xs text-slate-700 font-black">
                       <tr>
                         <th className="p-3 border-r border-slate-300 w-28 text-center">権限区分</th>
                         <th className="p-3 border-r border-slate-300 w-48">スタッフ氏名</th>
-                        {/* 💡 連絡先カラムの w- は未指定にすることで、残りの画面幅をダイナミックに100%吸い取らせて上下を揃えます */}
                         <th className="p-3 border-r border-slate-300">連絡先（メールアドレス）</th>
                         <th className="p-3 border-r border-slate-300 w-44">システム登録日</th>
                         <th className="p-3 w-28 text-center">操作</th>
@@ -251,7 +239,7 @@ export default function OwnerWorkersPage() {
               </div>
             </div>
 
-            {/* 【独立枠その2】👥 ワーカー（作業者）アカウント台帳 */}
+            {/* ワーカーアカウント台帳 */}
             <div className="space-y-2 pt-2">
               <div className="flex items-center gap-2 px-1">
                 <span className="text-xs font-black px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-300 rounded uppercase">WORKER DIRECTORY</span>
@@ -260,7 +248,6 @@ export default function OwnerWorkersPage() {
 
               <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
-                  {/* 💡【変更】上のテーブルと「全く同じ横幅の設定」を適用。これにより1ミリのズレもなく美しく整列します */}
                   <table className="w-full text-left border-collapse table-fixed min-w-[800px]">
                     <thead className="bg-slate-100 border-b-2 border-slate-300 text-xs text-slate-700 font-black">
                       <tr>
@@ -301,9 +288,7 @@ export default function OwnerWorkersPage() {
           </div>
         )}
 
-        {/* =========================================================================
-            📅 タブ分岐2：【本物連動版：カレンダー状況】完全月単位ローテーション・シフトマトリクス
-            ========================================================================= */}
+        {/* 📅 タブ分岐2：【カレンダー状況】 */}
         {activeTab === 'calendar' && (
           <div className="space-y-3 animate-fade-in">
             
@@ -391,7 +376,10 @@ export default function OwnerWorkersPage() {
                                   day.isToday ? 'bg-blue-50/10' : ''
                                 }`}
                               >
-                                {matchedEvents.length > 0 ? (
+                                {calendarLoading ? (
+                                  /* 💡【新設モーション】フワフワ光るプロ仕様のスケルトン座布団を出現させて待ち時間のストレスを完全破壊 */
+                                  <div className="bg-slate-200/70 h-10 rounded animate-pulse w-full border border-slate-300/40"></div>
+                                ) : matchedEvents.length > 0 ? (
                                   <div className="space-y-1">
                                     {matchedEvents.map((ev, idx) => (
                                       <div key={idx} className="bg-indigo-50 border-2 border-indigo-200 text-indigo-700 px-1 py-1.5 rounded font-mono font-bold shadow-xs text-[10px] leading-tight">
