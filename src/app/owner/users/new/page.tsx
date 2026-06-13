@@ -8,7 +8,7 @@ import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { db } from "@/lib/firebase";
 import OwnerShell from "@/components/OwnerShell";
 
-// ★ 共有いただいたfirebaseConfigをそのまま流用し、裏口生成用のパーツにします
+// 共有いただいたfirebaseConfigをそのまま流用
 const firebaseConfig = {
   apiKey: "AIzaSyBRR1L-yHfKrZcMxwtMWqr7h3hcDE5iX7Q",
   authDomain: "my-gyomu-app.firebaseapp.com",
@@ -20,31 +20,22 @@ const firebaseConfig = {
 
 export default function OwnerNewUserPage() {
   const router = useRouter();
-  const [role, setRole] = useState<"worker" | "owner">("worker"); // owner登録も可能に！
+  const [role, setRole] = useState<"worker" | "owner">("worker"); 
   const [lastName, setLastName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false); // 連打ロック用の防壁
+  const [submitting, setSubmitting] = useState(false); // パスワードステートは不要になったため撤去
 
-  // 💡【新設】シンプルモダンモーダル用の状態管理インフラ
+  // シンプルモダンモーダル用の状態管理インフラ
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"confirm" | "success" | "error">("confirm");
   const [modalTitle, setModalTitle] = useState("");
   const [modalMessage, setModalMessage] = useState("");
 
-  // フォーム送信時の入り口（window.confirmを撤去し、洗練されたカスタムポップアップを起動）
+  // フォーム送信時の入り口（パスワード文字数チェックは不要になったため削除）
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (password.length < 6) {
-      setModalMode("error");
-      setModalTitle("⚠️ パスワード文字数不足");
-      setModalMessage("初期ログインパスワードは、セキュリティ保持のため6文字以上で設定してください。");
-      setModalOpen(true);
-      return;
-    }
-
     // 登録確認ポップアップを起動
     setModalMode("confirm");
     setModalTitle("📥 アカウント発行の確認");
@@ -52,13 +43,11 @@ export default function OwnerNewUserPage() {
     setModalOpen(true);
   };
 
-  // 💡【確定処理】カスタムポップアップ内で「はい、登録する」を押したときに裏でハックを動かすロジック
+  // 【確定処理】カスタムポップアップ内で「はい、登録する」を押したときのロジック
   const handleExecuteCreateUser = async () => {
-    setModalOpen(false); // 登録窓を一旦閉じる
+    setModalOpen(false); 
     setSubmitting(true);
 
-    // ★Firebaseの最凶トラップ（オーナーのセッションが上書きされて強制ログアウトされる問題）を完全に防御するハック
-    // 「臨時の一時App」をブラウザの裏メモリへ一瞬だけ立ち上げて、そこで安全にアカウントを作成します。
     const tempAppName = `TempApp_${Date.now()}`;
     let tempApp;
     
@@ -66,8 +55,11 @@ export default function OwnerNewUserPage() {
       tempApp = initializeApp(firebaseConfig, tempAppName);
       const tempAuth = getAuth(tempApp);
 
-      // 1. 臨時の認証ゲートでユーザーを新規作成（これで現在のオーナーのログインセッションは無傷！）
-      const userCredential = await createUserWithEmailAndPassword(tempAuth, email, password);
+      // 💡【最重要変更】ログイン画面と100%共通の自動合鍵（パスワード）をここで自動生成します
+      const secretPassword = `${email}_sukiwork_secure_2026`;
+
+      // 1. 臨時の認証ゲートでユーザーを新規作成（自動生成した合鍵を流し込みます）
+      const userCredential = await createUserWithEmailAndPassword(tempAuth, email, secretPassword);
       const newUid = userCredential.user.uid;
 
       // 2. メインのFirestoreデータベース（db）の「users」コレクションへプロフィールデータを書き込み
@@ -80,10 +72,9 @@ export default function OwnerNewUserPage() {
         updatedAt: serverTimestamp()
       });
 
-      // 💡完了メッセージをWindows標準ではなく、最高にスマートな成功モーダルで表示！
       setModalMode("success");
       setModalTitle("✓ アカウント発行完了");
-      setModalMessage(`スタッフ「${lastName} ${firstName}」さんのログインアカウント発行および Firestore データベースへの同期保存が200%完璧に完了しました！`);
+      setModalMessage(`スタッフ「${lastName} ${firstName}」さんのアカウント発行およびシステム同期保存が200%完璧に完了しました！\n次回から、このスタッフはパスワードなし（メールアドレスのみ）で即座にログイン可能です。`);
       setModalOpen(true);
 
     } catch (error: any) {
@@ -98,34 +89,30 @@ export default function OwnerNewUserPage() {
       }
       setModalOpen(true);
     } finally {
-      // 3. 後片付け：使い終わった臨時Appをメモリから安全に抹消
       if (tempApp) {
         await deleteApp(tempApp);
       }
-      setSubmitting(false); // ロック解除
+      setSubmitting(false); 
     }
   };
 
-  // 成功ポップアップを閉じて一覧へ遷移する関数
   const handleCloseSuccessModal = () => {
     setModalOpen(false);
-    router.push("/owner/users"); // 完了後、スタッフ一覧画面へ強制送還
+    router.push("/owner/users"); 
   };
 
   return (
     <OwnerShell title="スタッフ新規登録" subTitle="管理者によるアカウント手動発行">
       <div className="max-w-md mx-auto bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden text-slate-900 font-sans antialiased mt-6">
         
-        {/* レジ風ヘッダー */}
         <div className="bg-slate-100 p-3 border-b-2 border-slate-300 flex justify-between items-center select-none">
           <span className="text-xs font-black text-slate-700">登録フォーム</span>
           <span className="text-[10px] font-mono font-bold text-slate-400">STAFF ID ISSUANCE</span>
         </div>
 
-        {/* 💡onSubmitを新設したスマートポップアップの検知窓口に差し替え */}
         <form onSubmit={handleFormSubmit} className="p-4 space-y-4">
           
-          {/* 権限区分の選択：トグルボタン仕様 */}
+          {/* 権限区分の選択 */}
           <div className="space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block select-none">権限区分</label>
             <div className="grid grid-cols-2 gap-2">
@@ -182,7 +169,7 @@ export default function OwnerNewUserPage() {
             </div>
           </div>
 
-          {/* メールアドレス（ID） */}
+          {/* メールアドレス */}
           <div className="space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block select-none">メールアドレス（ログインID）</label>
             <input
@@ -196,19 +183,7 @@ export default function OwnerNewUserPage() {
             />
           </div>
 
-          {/* パスワード */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block select-none">初期ログインパスワード（6文字以上）</label>
-            <input
-              type="text" 
-              required
-              disabled={submitting}
-              placeholder="最低6文字以上の英数字"
-              className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8] disabled:bg-slate-100"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
+          {/* 💡【修正点】手動のパスワード入力欄（<div className="space-y-1">...</div>）を完全に撤去しました */}
 
           {/* 登録ボタン */}
           <div className="pt-2">
@@ -232,26 +207,23 @@ export default function OwnerNewUserPage() {
         </form>
       </div>
 
-      {/* 💡【超シンプル化リフォーム】アカウント発行・登録完了ポップアップも、無駄なフチ線や影のない極上シンプルデザインに完全統一！ */}
+      {/* カスタムポップアップモーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            {/* ポップアップヘッダー：モードに連動してテーマカラーが上品に変化 */}
             <div className={`px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none text-white ${
               modalMode === "success" ? "bg-emerald-600" : modalMode === "error" ? "bg-rose-600" : "bg-[#0082C8]"
             }`}>
               <span>{modalTitle}</span>
             </div>
 
-            {/* ポップアップ本文 */}
             <div className="p-6 bg-white">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 {modalMessage}
               </p>
             </div>
 
-            {/* アクションボタンエリア */}
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               {modalMode === "confirm" ? (
                 <>
