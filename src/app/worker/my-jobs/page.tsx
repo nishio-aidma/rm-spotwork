@@ -73,46 +73,38 @@ export default function WorkerMyJobsPage() {
     <WorkerShell title="進行中のタスク" subTitle="あなたが受諾し、現在稼働中または検収待ちの業務台帳">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 上部コントロールバー：デザインと文言を完全統一 */}
-        <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-          <div className="text-sm font-black text-slate-700 min-w-[200px]">
-            現在請負中のお仕事: <span className="text-lg text-[#0082C8] font-black font-mono">{jobs.length}</span> 件
-          </div>
-
-          {/* 青ベースのフルサイズ一体型ナビゲーションタブへ完全リフォーム */}
-          <div className="flex bg-slate-100 p-1 rounded border border-slate-300 gap-1 select-none">
-            <button
-              type="button"
-              onClick={() => setActiveTab('active')}
-              className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${
-                activeTab === 'active'
-                  ? 'bg-[#0082C8] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-              }`}
-            >
-              🚀 作業中・未完了
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'active' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
-                {activeCount}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('review')}
-              className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${
-                activeTab === 'review'
-                  ? 'bg-amber-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-              }`}
-            >
-              ⌛ 報告済み・検収待ち
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'review' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
-                {reviewCount}
-              </span>
-            </button>
-          </div>
+        {/* 💡【超完全統一】スクショの「案件を探す」と1ミリの狂いもなく完全同期する、敷き詰め型フルワイド2大タブ */}
+        <div className="bg-white border-2 border-slate-300 rounded shadow-sm flex overflow-hidden select-none h-11 items-stretch">
+          <button
+            type="button"
+            onClick={() => setActiveTab('active')}
+            className={`flex-1 text-center text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'active'
+                ? 'bg-[#0082C8] text-white shadow-inner'
+                : 'bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            🚀 作業中・未完了 ({activeCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('review')}
+            className={`flex-1 text-center text-xs font-black transition-all flex items-center justify-center gap-1.5 border-l border-slate-200 ${
+              activeTab === 'review'
+                ? 'bg-[#0082C8] text-white shadow-inner'
+                : 'bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            ⌛ 報告済み・検収待ち ({reviewCount})
+          </button>
         </div>
 
-        {/* 格子状の進行中データテーブル：table-fixedと横幅比率を完全同期 */}
+        {/* 💡【配置最適化】監督ご指定の文言をテーブルの上に美しくスマートに配備 */}
+        <div className="text-xs font-black text-slate-500 pl-1 select-none">
+          📋 現在請負中のお仕事: <span className="text-sm text-[#0082C8] font-black font-mono">{jobs.length}</span> 件
+        </div>
+
+        {/* 格子状の進行中データテーブル：table-fixedによりグリッド線のズレを完全破壊 */}
         <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse table-fixed text-xs min-w-[1000px]">
