@@ -145,56 +145,68 @@ export default function WorkLogsPage() {
     <WorkerShell title="稼働履歴" subTitle="日別稼働時間の明細一覧">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 月次稼働締めコントロールボード */}
-        <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden">
-          <div className="bg-slate-100 p-3 border-b-2 border-slate-300 flex justify-between items-center">
-            <span className="text-xs font-black text-slate-700">🌙 月次稼働締めコントロール</span>
-            <span className="text-[10px] font-mono font-bold text-slate-400">MONTHLY CLOSING</span>
-          </div>
-          <div className="p-4 md:flex md:items-center md:justify-between gap-6 bg-blue-50/40">
-            <div className="space-y-1">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                {year}年 {month + 1}月 / 表示月の合計稼働時間
-              </span>
-              <p className="text-xl font-black text-[#0082C8] font-mono tracking-tight">
-                {formatTextTime(monthlyTotalSeconds)}
-              </p>
-            </div>
+        {/* 💡【リフォーム点】ヘッダーを追従固定（sticky）にし、ボタン類をすべて1つのボードへ極上集約！ */}
+        <div className="sticky top-0 z-20 bg-[#f8fafc] -mt-2 pt-2 pb-1.5 backdrop-blur-sm">
+          <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden">
             
-            <div className="mt-4 md:mt-0 flex flex-col sm:items-end gap-2 max-w-md">
-              {monthlyStatus === "confirmed" ? (
-                <div className="bg-emerald-50 text-emerald-700 border-2 border-emerald-300 text-xs font-black px-4 py-2.5 rounded text-center shadow-inner select-none whitespace-nowrap">
-                  ✓ 今月の稼働実績は提出済みです
-                </div>
-              ) : (
-                <>
-                  <span className="text-[11px] font-bold text-slate-500 leading-tight">
-                    📝 今月の業務時間の確認後、「稼働実績確認済み」を押して提出してください
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setModalOpen(true)} 
-                    disabled={submitting || monthlyTotalSeconds === 0}
-                    className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-5 py-2.5 rounded border border-black/10 shadow-sm transition-all active:scale-95 disabled:opacity-30 whitespace-nowrap text-center"
-                  >
-                    🔒 稼働実績確認済みとして提出
-                  </button>
-                </>
-              )}
+            {/* ① 看板タイトルの変更（月次稼働記録） */}
+            <div className="bg-slate-100 p-2.5 border-b-2 border-slate-300 flex justify-between items-center select-none">
+              <span className="text-xs font-black text-slate-700">🌙 月次稼働記録</span>
+              <span className="text-[10px] font-mono font-bold text-slate-400">MONTHLY RECORD</span>
             </div>
-          </div>
-        </div>
 
-        {/* 1. 上部コントロールバー */}
-        <div className="flex items-center justify-between bg-white border-2 border-slate-300 p-4 rounded shadow-sm">
-          <button onClick={() => router.push("/worker/dashboard")} className="text-[11px] font-black text-[#0082C8] hover:underline">
-            ← メインメニューに戻る
-          </button>
-          
-          <div className="flex items-center bg-white border-2 border-slate-300 rounded overflow-hidden">
-            <button onClick={() => changeMonth(-1)} className="px-3 py-1.5 hover:bg-slate-100 text-slate-700 font-bold text-xs border-r border-slate-300 transition-colors">〈</button>
-            <span className="px-4 py-1.5 text-xs font-black text-slate-800 bg-slate-50">{year}年 {month + 1}月</span>
-            <button onClick={() => changeMonth(1)} className="px-3 py-1.5 hover:bg-slate-100 text-slate-700 font-bold text-xs border-l border-slate-300 transition-colors">〉</button>
+            {/* ② 全要素の一体型モダンライン */}
+            <div className="p-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-blue-50/40">
+              
+              {/* 【左ブロック】メニューに戻る ＆ 月選択コンソール */}
+              <div className="flex items-center gap-4 flex-wrap">
+                <button 
+                  type="button"
+                  onClick={() => router.push("/worker/dashboard")} 
+                  className="text-[11px] font-black text-[#0082C8] hover:underline whitespace-nowrap shrink-0"
+                >
+                  ← メインメニューに戻る
+                </button>
+                
+                <div className="flex items-center bg-white border-2 border-slate-300 rounded overflow-hidden shadow-xs shrink-0">
+                  <button type="button" onClick={() => changeMonth(-1)} className="px-2.5 py-1 hover:bg-slate-100 text-slate-700 font-bold text-xs border-r border-slate-300 transition-colors">〈</button>
+                  <span className="px-3 py-1 text-xs font-black text-slate-800 bg-slate-50 whitespace-nowrap min-w-[90px] text-center">{year}年 {month + 1}月</span>
+                  <button type="button" onClick={() => changeMonth(1)} className="px-2.5 py-1 hover:bg-slate-100 text-slate-700 font-bold text-xs border-l border-slate-300 transition-colors">〉</button>
+                </div>
+              </div>
+              
+              {/* 【右ブロック】稼働集計時間显示 ＆ 締め提出ボタン */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:justify-end flex-1 w-full">
+                {/* 💡「合計稼稼働時間」になっていたタイポもついでに修正 */}
+                <div className="space-y-0.5 text-left sm:text-right">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    表示月の合計稼働時間
+                  </span>
+                  <p className="text-lg font-black text-[#0082C8] font-mono tracking-tight leading-none">
+                    {formatTextTime(monthlyTotalSeconds)}
+                  </p>
+                </div>
+                
+                <div className="flex shrink-0">
+                  {monthlyStatus === "confirmed" ? (
+                    <div className="bg-emerald-50 text-emerald-700 border-2 border-emerald-300 text-[10px] font-black px-4 py-2 rounded text-center shadow-inner select-none whitespace-nowrap">
+                      ✓ 実績提出済み
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setModalOpen(true)} 
+                      disabled={submitting || monthlyTotalSeconds === 0}
+                      className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white text-[11px] font-black px-4 py-2 rounded border border-black/10 shadow-sm transition-all active:scale-95 disabled:opacity-30 whitespace-nowrap text-center"
+                    >
+                      🔒 確定して実績を提出
+                    </button>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
           </div>
         </div>
 
@@ -272,25 +284,21 @@ export default function WorkLogsPage() {
 
       </div>
 
-      {/* 💡【超シンプル化リフォーム】ダサい4重黒枠線と飛び出す影を全撤去！一般的なWebツール同様にやさしく洗練されたモダンモーダル */}
+      {/* 稼働実績の提出確認モーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
-          {/* border-4 border-slate-950 や shadow-rgba をすべて消し、丸み(rounded-lg)とやさしい極細線 border-slate-200 ＆ ふんわりした高級な下影 shadow-xl へお色直し */}
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            {/* ポップアップヘッダー：太帯感をなくし、スマートで知的なクリーンブルーの細帯へ */}
             <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>🔒 稼働実績の提出確認</span>
             </div>
 
-            {/* ポップアップ本文：背景のグレー(bg-slate-50)を廃止し、すっきりした純白で視認性を最大化 */}
             <div className="p-6 bg-white">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 今月の最終業務報告として、この稼働実績を『確認済み』にしますか？{"\n\n"}確定すると実績データがロックされ、オーナー側の管理画面へ共有されます。
               </p>
             </div>
 
-            {/* アクションボタン：無駄な黒い境界線を全撤去、モダンなフラットデザインへ */}
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
                 type="button"
