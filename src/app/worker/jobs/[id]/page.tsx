@@ -30,7 +30,8 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
   const [modalMessage, setModalMessage] = useState("");
-  const [modalActionType, setModalActionType] = useState<"accept" | "start" | "pause" | "complete" | null>(null);
+  // 💡 save_success（保存完了通知モード）を識別子に追加
+  const [modalActionType, setModalActionType] = useState<"accept" | "start" | "pause" | "complete" | "save_success" | null>(null);
 
   // コピー完了通知用のポップステート
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -125,7 +126,9 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
         updatedAt: serverTimestamp()
       });
       setJob((prev: any) => ({ ...prev, workerComment: workerComment }));
-      alert("報告コメント・作業メモを一時保存しました！");
+      
+      // 💡 ブラウザ標準の alert を完全破壊し、自作のシンプルリッチモーダルを起動！
+      triggerModal("save_success");
     } catch (e) {
       console.error("コメントの一時保存に失敗しました:", e);
       alert("保存に失敗しました。");
@@ -135,7 +138,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   };
 
   // ポップアップを起動する窓口
-  const triggerModal = (type: "accept" | "start" | "pause" | "complete") => {
+  const triggerModal = (type: "accept" | "start" | "pause" | "complete" | "save_success") => {
     setModalActionType(type);
     if (type === "accept") {
       setModalTitle("📥 案件を引き受ける");
@@ -149,6 +152,11 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     } else if (type === "complete") {
       setModalTitle("🏁 完了報告を提出する");
       setModalMessage("本日の作業をすべて終了し、オーナーへ提出しますか？\n\n※現在最下部のメモ欄に入力されているコメントが、そのまま最終実績として提出されます。");
+    }
+    // 💡【新設】保存成功時のリッチな表示定義
+    else if (type === "save_success") {
+      setModalTitle("✨ メモ一時保存完了");
+      setModalMessage("報告コメント・作業メモをクラウドデータベースへ安全に一時保存しました！\n\nこの内容はいつでも書き換え可能で、右側の『作業を完了する』ボタンを押した際に最終実績としてオーナーへ自動提出されます。");
     }
     setModalOpen(true);
   };
@@ -578,27 +586,40 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               </p>
             </div>
 
+            {/* 💡【超進化】save_success の時は OK ボタン1発、それ以外の確認モードの時は いいえ／はい を動的に出し分け！ */}
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
-              >
-                いいえ
-              </button>
-              <button
-                type="button"
-                onClick={handleModalConfirm}
-                className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
-              >
-                はい、実行する
-              </button>
+              {modalActionType === "save_success" ? (
+                <button
+                  type="button"
+                  onClick={() => { setModalOpen(false); setModalActionType(null); }}
+                  className="px-6 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                >
+                  OK
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
+                  >
+                    いいえ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleModalConfirm}
+                    className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                  >
+                    はい、実行する
+                  </button>
+                </>
+              )}
             </div>
 
           </div>
         </div>
       )}
 
-    </WorkerShell> // 💡 602行目を完璧に </WorkerShell> へリプレース完了！
+    </WorkerShell>
   );
 }
