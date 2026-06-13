@@ -11,24 +11,20 @@ export default function WorkerMyJobsPage() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 💡【新設】現在アクティブなタブを管理するステート ('active': 稼働中 / 'review': 検収待ち)
+  // 'active': 稼働中 / 'review': 検収待ち
   const [activeTab, setActiveTab] = useState<'active' | 'review'>('active');
 
   const fetchMyJobs = async (userId: string) => {
     setLoading(true);
     try {
-      // 自分が担当（workerIdが自分の一致）している案件を全取得
       const q = query(collection(db, "jobs"), where("workerId", "==", userId));
       const snap = await getDocs(q);
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // 進行中タスクとして意味のあるステータスだけを抽出し、期日が近い順に整列
-      // (受諾済み、稼働中、一時停止、検収待ち)
       const myActiveJobs = list.filter((j: any) => 
         j.status === "assigned" || j.status === "working" || j.status === "paused" || j.status === "review"
       );
 
-      // 期日（deadline）が近い順にソート（未設定は一番下に沈める安全弁付き）
       myActiveJobs.sort((a: any, b: any) => {
         const deadlineA = a.deadline && typeof a.deadline === "string" && a.deadline.trim() !== "" ? a.deadline : "9999-12-31";
         const deadlineB = b.deadline && typeof b.deadline === "string" && b.deadline.trim() !== "" ? b.deadline : "9999-12-31";
@@ -60,9 +56,6 @@ export default function WorkerMyJobsPage() {
     return `${h}h ${m}m`;
   };
 
-  // 💡【新設】タブの切り替えロジック
-  // 'active' ➔ 受諾済み(assigned), 計測中(working), 一時停止(paused)
-  // 'review' ➔ 検収待ち(review)
   const filteredJobs = jobs.filter((job) => {
     if (activeTab === 'active') {
       return job.status === 'assigned' || job.status === 'working' || job.status === 'paused';
@@ -71,7 +64,6 @@ export default function WorkerMyJobsPage() {
     }
   });
 
-  // 各タブの件数をリアルタイム集計してバッジに表示
   const activeCount = jobs.filter(j => j.status === 'assigned' || j.status === 'working' || j.status === 'paused').length;
   const reviewCount = jobs.filter(j => j.status === 'review').length;
 
@@ -81,18 +73,18 @@ export default function WorkerMyJobsPage() {
     <WorkerShell title="進行中のタスク" subTitle="あなたが受諾し、現在稼働中または検収待ちの業務台帳">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 上部サマリーカウンター */}
-        <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="text-sm font-black text-slate-700">
-            現在の抱え中タスク総数: <span className="text-lg text-[#0082C8] font-black">{jobs.length}</span> 件
+        {/* 上部コントロールバー：デザインと文言を完全統一 */}
+        <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+          <div className="text-sm font-black text-slate-700 min-w-[200px]">
+            現在請負中のお仕事: <span className="text-lg text-[#0082C8] font-black font-mono">{jobs.length}</span> 件
           </div>
 
-          {/* 💡【新設】現場特化型：スタイリッシュ切り替えタブ */}
-          <div className="flex bg-slate-100 p-1 rounded border border-slate-300 gap-1 self-start sm:self-auto select-none">
+          {/* 青ベースのフルサイズ一体型ナビゲーションタブへ完全リフォーム */}
+          <div className="flex bg-slate-100 p-1 rounded border border-slate-300 gap-1 select-none">
             <button
               type="button"
               onClick={() => setActiveTab('active')}
-              className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-2 ${
+              className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${
                 activeTab === 'active'
                   ? 'bg-[#0082C8] text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
@@ -106,7 +98,7 @@ export default function WorkerMyJobsPage() {
             <button
               type="button"
               onClick={() => setActiveTab('review')}
-              className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-2 ${
+              className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${
                 activeTab === 'review'
                   ? 'bg-amber-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
@@ -120,17 +112,17 @@ export default function WorkerMyJobsPage() {
           </div>
         </div>
 
-        {/* 現場特化型：格子状の進行中データテーブル */}
+        {/* 格子状の進行中データテーブル：table-fixedと横幅比率を完全同期 */}
         <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse table-auto text-xs">
+            <table className="w-full text-left border-collapse table-fixed text-xs min-w-[1000px]">
               <thead className="bg-slate-100 border-b-2 border-slate-300 text-slate-700 font-black">
                 <tr>
-                  <th className="p-3 border-r border-slate-300 w-28">稼働状況</th>
+                  <th className="p-3 border-r border-slate-300 w-28 text-center">稼働状況</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
-                  <th className="p-3 border-r border-slate-300 w-28">仕事種別</th>
+                  <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
                   <th className="p-3 border-r border-slate-300">案件名</th>
-                  <th className="p-3 border-r border-slate-300 w-28">期日</th>
+                  <th className="p-3 border-r border-slate-300 w-28 text-center">期日</th>
                   <th className="p-3 border-r border-slate-300 w-44">SCクライアント</th>
                   <th className="p-3 border-r border-slate-300 w-24 text-right">累積計測</th>
                   <th className="p-3 w-20 text-center">操作</th>
@@ -139,8 +131,6 @@ export default function WorkerMyJobsPage() {
               <tbody className="divide-y divide-slate-200 font-medium text-slate-800 bg-white">
                 {filteredJobs.map((job) => (
                   <tr key={job.id} className="hover:bg-slate-50 transition-colors">
-                    
-                    {/* 現在のステータスバッジ */}
                     <td className="p-3 border-r border-slate-200">
                       <span className={`px-2 py-0.5 border text-[10px] font-black rounded block text-center uppercase ${
                         job.status === 'working' ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse' :
@@ -154,26 +144,23 @@ export default function WorkerMyJobsPage() {
                       </span>
                     </td>
 
-                    {/* 緊急度 */}
                     <td className="p-3 border-r border-slate-200 text-center">
                       {job.urgency === "3" ? (
-                        <span className="bg-rose-100 text-rose-900 border border-rose-300 font-black px-1.5 py-0.5 rounded text-[10px] uppercase block">至急</span>
+                        <span className="bg-rose-50 text-rose-700 border border-rose-300 font-black px-1.5 py-0.5 rounded text-[10px] uppercase block">至急</span>
                       ) : job.urgency === "2" ? (
-                        <span className="bg-amber-100 text-amber-900 border border-amber-400 font-black px-1.5 py-0.5 rounded text-[10px] block">高め</span>
+                        <span className="bg-amber-50 text-amber-700 border border-amber-300 font-black px-1.5 py-0.5 rounded text-[10px] block">高め</span>
                       ) : (
                         <span className="bg-slate-50 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] block">通常</span>
                       )}
                     </td>
 
-                    {/* 仕事種別 */}
-                    <td className="p-3 border-r border-slate-300">
+                    <td className="p-3 border-r border-slate-200">
                       <span className="bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded text-[11px] font-bold block text-center">
                         {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト作成'}
                       </span>
                     </td>
 
-                    {/* 案件名 */}
-                    <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate max-w-xs" title={job.title}>
+                    <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={job.title}>
                       <Link 
                         href={`/worker/jobs/${job.id}`} 
                         className="hover:underline hover:text-[#0082C8] transition-colors block w-full truncate"
@@ -182,28 +169,23 @@ export default function WorkerMyJobsPage() {
                       </Link>
                     </td>
 
-                    {/* 期日 */}
-                    <td className="p-3 border-r border-slate-200 font-mono font-bold text-slate-600">
-                      {job.deadline ? job.deadline : <span className="text-slate-300 font-normal">未設定</span>}
+                    <td className="p-3 border-r border-slate-200 font-mono font-black text-center text-sm text-slate-600">
+                      {job.deadline ? job.deadline : <span className="text-slate-300 font-normal text-xs">未設定</span>}
                     </td>
 
-                    {/* SCクライアント */}
-                    <td className="p-3 border-r border-slate-200 text-slate-600 truncate max-w-[160px]" title={job.scClient}>
+                    <td className="p-3 border-r border-slate-200 text-slate-600 truncate">
                       {job.scClient || "-"}
                     </td>
 
-                    {/* 累積時間実績 */}
-                    <td className="p-3 border-r border-slate-200 text-right font-mono font-bold text-slate-700">
+                    <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-slate-700 bg-slate-50/30">
                       {formatTime(job.totalAccumulatedSeconds || 0)}
                     </td>
 
-                    {/* 操作エリア */}
                     <td className="p-3 text-center">
-                      <Link href={`/worker/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">
+                      <Link href={`/worker/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black text-[11px] block active:scale-95 transition-transform">
                         詳細 →
                       </Link>
                     </td>
-
                   </tr>
                 ))}
               </tbody>
