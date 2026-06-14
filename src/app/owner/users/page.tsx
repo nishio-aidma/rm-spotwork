@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { collection, getDocs, doc, deleteDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import OwnerShell from "@/components/OwnerShell";
-import Link from "next/link";
+import Link from "next/link"; // 💡 "next/navigation" から "next/link" へ修正完了！
 
 export default function OwnerWorkersPage() {
   const { user: owner, loading: authLoading } = useRequireAuth("owner");
@@ -21,6 +21,9 @@ export default function OwnerWorkersPage() {
   // 本物のGoogleカレンダーから吸い上げたリアルタイム予定を保管するステート
   const [realCalendarEvents, setRealCalendarEvents] = useState<any[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
+
+  // 横スクロールするテーブルの親コンテナを直撃制御するRef
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // 選択された基準月（viewDate）の「1日」から「末日」までの全日付を配列として動的に自動生成
   const getDaysInMonthArray = (targetDate: Date) => {
@@ -49,6 +52,23 @@ export default function OwnerWorkersPage() {
 
   const changeMonth = (diff: number) => {
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + diff, 1));
+  };
+
+  // 本日カラムの位置を計算し、画面の中央左寄りにスッ…と滑らかに自動スクロールさせる関数
+  const scrollToToday = () => {
+    if (!scrollContainerRef.current) return;
+    
+    const todayIndex = daysRange.findIndex(d => d.isToday);
+    if (todayIndex === -1) return;
+
+    const targetLeft = 176 + todayIndex * 96;
+    const container = scrollContainerRef.current;
+    const offset = container.clientWidth * 0.25;
+
+    container.scrollTo({
+      left: Math.max(0, targetLeft - offset),
+      behavior: "smooth"
+    });
   };
 
   const fetchAllUsers = async () => {
@@ -116,6 +136,16 @@ export default function OwnerWorkersPage() {
       fetchGoogleCalendarSchedules(currentWorkers, viewDate);
     }
   }, [activeTab, users, viewDate]);
+
+  // カレンダーのローディングが終了した瞬間に、自動で本日位置へ優しくジャンプ
+  useEffect(() => {
+    if (!calendarLoading && activeTab === 'calendar') {
+      const timer = setTimeout(() => {
+        scrollToToday();
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [calendarLoading, activeTab]);
 
   const handleDeleteUser = async (userId: string, userName: string) => {
     if (userId === auth.currentUser?.uid) {
@@ -311,13 +341,30 @@ export default function OwnerWorkersPage() {
                 </button>
               </div>
               
-              <button
-                type="button"
-                onClick={() => setViewDate(new Date())}
-                className="text-[11px] font-black text-[#0082C8] hover:underline uppercase tracking-tight"
-              >
-                今月（当月）へ戻る
-              </button>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const today = new Date();
+                    if (viewDate.getFullYear() !== today.getFullYear() || viewDate.getMonth() !== today.getMonth()) {
+                      setViewDate(today);
+                    } else {
+                      scrollToToday();
+                    }
+                  }}
+                  className="text-[11px] font-black text-amber-400 hover:underline uppercase tracking-tight"
+                >
+                  📅 当日位置へ移動
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewDate(new Date())}
+                  className="text-[11px] font-black text-[#0082C8] hover:underline uppercase tracking-tight"
+                >
+                  今月（当月）へ戻る
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center justify-between px-1 flex-wrap gap-2 pt-1">
@@ -333,7 +380,7 @@ export default function OwnerWorkersPage() {
             </div>
 
             <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
+              <div ref={scrollContainerRef} className="overflow-x-auto">
                 <table className="w-full text-left border-collapse table-fixed min-w-[3000px]">
                   
                   <thead className="bg-slate-100 border-b-2 border-slate-300 text-xs text-slate-700 font-black">
@@ -377,7 +424,6 @@ export default function OwnerWorkersPage() {
                                 }`}
                               >
                                 {calendarLoading ? (
-                                  /* 💡【新設モーション】フワフワ光るプロ仕様のスケルトン座布団を出現させて待ち時間のストレスを完全破壊 */
                                   <div className="bg-slate-200/70 h-10 rounded animate-pulse w-full border border-slate-300/40"></div>
                                 ) : matchedEvents.length > 0 ? (
                                   <div className="space-y-1">

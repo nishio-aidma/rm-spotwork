@@ -143,7 +143,6 @@ export default function OwnerExportPage() {
     }
   };
 
-  // 💡【新設計算ロジック】当月稼働したスタッフの締め状態をリアルタイム集計
   const hasData = summaryData.length > 0;
   const unsubmittedCount = summaryData.filter(w => w.submissionStatus !== "confirmed").length;
   const isAllSubmitted = hasData && unsubmittedCount === 0;
@@ -152,7 +151,26 @@ export default function OwnerExportPage() {
     <OwnerShell title="データ出力" subTitle="月次実績の確認とCSV出力">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 💡【新設】月次締めステータス監視アラートボード */}
+        {/* 💡【超画期的新設】管理者用公式マニュアル常設リンクボード（ scannable なダークモダンデザイン） */}
+        <div className="bg-slate-900 text-white p-4 rounded border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md select-none animate-fade-in">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <span className="bg-blue-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-sm uppercase tracking-wider">OFFICIAL MANUAL</span>
+              <h4 className="text-xs font-black text-slate-100 tracking-wide">すきわ〜く 管理者用運用マニュアル</h4>
+            </div>
+            <p className="text-[11px] text-slate-400 font-medium">月次実績データの集計定義、CSV出力手順、ワーカー締め処理の確定フローはこちらの公式ドキュメントをご確認ください。</p>
+          </div>
+          <a 
+            href="https://docs.google.com/document/d/1pWkgdqFzsImV3NUZY1xFT1f_0j1KjhsjsBgB_1lH8oI/edit?usp=sharing"
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap shrink-0 flex items-center gap-1"
+          >
+            📘 マニュアルを開く ↗
+          </a>
+        </div>
+
+        {/* 月次締めステータス監視アラートボード */}
         {hasData && !loadingData && (
           <div className={`p-4 rounded border-2 shadow-sm flex items-center gap-3 transition-all ${
             isAllSubmitted 
@@ -162,7 +180,7 @@ export default function OwnerExportPage() {
             <span className="text-base select-none">{isAllSubmitted ? "✨" : "⚠️"}</span>
             <div className="text-xs font-black leading-relaxed">
               {isAllSubmitted ? (
-                <p>対象月の稼働スタッフ全員（<span className="text-sm font-mono">{summaryData.length}</span>名）が実績提出を完了しました。今月の稼働データを安全に出力できます。</p>
+                <p>対象月の稼働スタッフ全員（<span className="text-sm font-mono">{summaryData.length}</span>名）が実績提出を完了しました。今時代の稼働データを安全に出力できます。</p>
               ) : (
                 <p>未提出の稼働スタッフが <span className="text-sm font-mono text-rose-600 font-black px-1">{unsubmittedCount}</span> 名います。全員の提出が完了するまでデータ出力はロックされます。</p>
               )}
@@ -184,9 +202,8 @@ export default function OwnerExportPage() {
           
           <button 
             onClick={handleExport}
-            // 💡【安全ロック】未提出者がいる場合、または稼働データ自体がない場合はCSV出力を完全にブロック
             disabled={exporting || !isAllSubmitted}
-            className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white border border border-black/10 px-6 py-2.5 rounded text-xs font-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm"
+            className="w-full sm:w-auto bg-[#0082C8] hover:bg-[#0072B5] text-white border border-black/10 px-6 py-2.5 rounded text-xs font-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm"
           >
             📥 {exporting ? "CSV生成中..." : "表示内容をCSVで出力する"}
           </button>
