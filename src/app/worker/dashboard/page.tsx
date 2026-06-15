@@ -13,8 +13,6 @@ export default function WorkerDashboard() {
   const [viewDate, setViewDate] = useState(new Date());
   const [stats, setStats] = useState({ monthlySeconds: 0, monthlyCompleted: 0, activeCount: 0, reviewCount: 0 });
   const [recentJobs, setRecentJobs] = useState<any[]>([]);
-  
-  // 新着案件を保管しておくための箱
   const [newJobs, setNewJobs] = useState<any[]>([]);
 
   const formatTime = (s: number) => {
@@ -33,7 +31,6 @@ export default function WorkerDashboard() {
         const currentYear = viewDate.getFullYear();
         const currentMonth = viewDate.getMonth();
 
-        // 自分のデータ（案件・ログ）と、世の中の「募集中（open）」の仕事を同時に取り寄せ
         const [snapJobs, snapLogs, snapOpenJobs] = await Promise.all([
           getDocs(query(collection(db, "jobs"), where("workerId", "==", user.uid))),
           getDocs(query(collection(db, "workLogs"), where("workerId", "==", user.uid))),
@@ -44,7 +41,6 @@ export default function WorkerDashboard() {
         const myLogs = snapLogs.docs.map(d => d.data());
         const openJobs = snapOpenJobs.docs.map(d => ({ id: d.id, ...d.data() }) as any);
 
-        // --- 元々の月次実績の計算ロジック（完全保持） ---
         let monthlySec = 0, monthlyComp = 0, active = 0, review = 0;
 
         myJobs.forEach((j: any) => {
@@ -73,8 +69,6 @@ export default function WorkerDashboard() {
         setStats({ monthlySeconds: monthlySec, monthlyCompleted: monthlyComp, activeCount: active, reviewCount: review });
         setRecentJobs(myJobs.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).slice(0, 5));
 
-
-        // --- 直近3日以内の「新着案件」を仕分けるロジック ---
         const now = new Date();
         const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
@@ -84,8 +78,6 @@ export default function WorkerDashboard() {
           return createdDate >= threeDaysAgo;
         });
 
-        // 新着案件を「期日（deadline）が近い順」に並び替えます
-        // 未設定のものは遠い未来（9999年）として扱い、一番下に沈める安全弁を搭載
         filteredNewJobs.sort((a: any, b: any) => {
           const deadlineA = a.deadline && typeof a.deadline === "string" && a.deadline.trim() !== "" ? a.deadline : "9999-12-31";
           const deadlineB = b.deadline && typeof b.deadline === "string" && b.deadline.trim() !== "" ? b.deadline : "9999-12-31";
@@ -111,12 +103,62 @@ export default function WorkerDashboard() {
     <WorkerShell title="メインメニュー" subTitle="業務概要と進捗状況">
       <div className="max-w-full mx-auto space-y-4">
         
-        {/* =========================================================================
-            ✅ メイン実績エリア（左右2分割のグリッド配置）
-            ========================================================================= */}
+        {/* 💡【超絶新設】ワーカー専用：公式ご利用マニュアル3連クイックリンクボード */}
+        <div className="bg-slate-900 text-white p-4 rounded border border-slate-800 shadow-md select-none animate-fade-in space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="bg-[#0082C8] text-white text-[9px] font-black px-1.5 py-0.5 rounded-sm uppercase tracking-wider">OFFICIAL MANUALS</span>
+            <h4 className="text-xs font-black text-slate-100 tracking-wide">すきわ〜く 公式ご利用マニュアル</h4>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* マニュアル1 */}
+            <a 
+              href="https://docs.google.com/document/d/17IVpVYgvguhLSh7ct6BgYQCXqot5sDRTQ0GLs1MsILo/edit?usp=sharing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-slate-800/50 hover:bg-slate-800 border border-slate-700/40 p-3 rounded transition-all active:scale-98 flex flex-col justify-between group"
+            >
+              <div className="space-y-1">
+                <span className="text-[10px] text-sky-400 font-bold block">STEP 01</span>
+                <p className="text-xs font-black text-slate-100 group-hover:text-[#0082C8] transition-colors leading-snug">お仕事の探し方から引き受けて作業を完了するまで</p>
+              </div>
+              <span className="text-[10px] text-slate-400 font-bold mt-4 block text-right">手順を確認する ↗</span>
+            </a>
+
+            {/* マニュアル2 */}
+            <a 
+              href="https://docs.google.com/document/d/1rGbaB_abOkhP8MbTEdBS1bomX8NMl7AkYWHKvlwYyyM/edit?usp=sharing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-slate-800/50 hover:bg-slate-800 border border-slate-700/40 p-3 rounded transition-all active:scale-98 flex flex-col justify-between group"
+            >
+              <div className="space-y-1">
+                <span className="text-[10px] text-sky-400 font-bold block">STEP 02</span>
+                <p className="text-xs font-black text-slate-100 group-hover:text-[#0082C8] transition-colors leading-snug">ダッシュボードの見方について（各数値・履歴解説）</p>
+              </div>
+              <span className="text-[10px] text-slate-400 font-bold mt-4 block text-right">見方を確認する ↗</span>
+            </a>
+
+            {/* マニュアル3 */}
+            <a 
+              href="https://docs.google.com/document/d/1mQ3LEKkcAVKgG-6O44E7SURzdhVNSw7GiG41ul_K0yw/edit?usp=sharing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-slate-800/50 hover:bg-slate-800 border border-rose-900/60 p-3 rounded transition-all active:scale-98 flex flex-col justify-between group bg-gradient-to-br from-slate-900 via-slate-900 to-rose-950/20"
+            >
+              <div className="space-y-1">
+                <span className="text-[10px] text-rose-400 font-black block">⚠️ IMPORTANT</span>
+                <p className="text-xs font-black text-slate-100 group-hover:text-rose-400 transition-colors leading-snug">毎月稼働時間の提出が必要です（必須ルール）</p>
+              </div>
+              <span className="text-[10px] text-slate-400 font-bold mt-4 block text-right">ルールを確認する ↗</span>
+            </a>
+          </div>
+        </div>
+
+        {/* メイン実績エリア（左右2分割のグリッド配置） */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           
-          {/* 【左側エリア：7マス分】月次セレクター ＆ 実績ミニカード ＆ 特大アクションボタン */}
+          {/* 【左側エリア：7マス分】 */}
           <div className="lg:col-span-7 space-y-4">
             
             {/* 月次セレクター */}
@@ -173,7 +215,7 @@ export default function WorkerDashboard() {
             </div>
           </div>
 
-          {/* 【右側エリア：5マス分】最近の活動履歴 */}
+          {/* 【右側エリア：5マス分】 */}
           <div className="lg:col-span-5">
             <div className="bg-white border-2 border-slate-300 rounded shadow-sm flex flex-col h-full">
               <div className="bg-slate-100 p-3 border-b border-slate-300 flex justify-between items-center">
@@ -212,13 +254,8 @@ export default function WorkerDashboard() {
 
         </div>
 
-
-        {/* =========================================================================
-            ✨【新着案件コーナー】スリムリスト形式 ＋ 「緊急度」を追加
-            ========================================================================= */}
+        {/* 新着案件コーナー */}
         <div className="bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden">
-          
-          {/* ヘッダータイトル */}
           <div className="bg-slate-950 text-white p-3 border-b-2 border-slate-300 flex justify-between items-center select-none">
             <div className="flex items-center gap-2">
               <span className="text-xs font-black tracking-wider">✨ 直近3日以内に新規追加された案件</span>
@@ -227,19 +264,16 @@ export default function WorkerDashboard() {
             <span className="text-[9px] font-mono font-bold text-slate-400">🔥 SPEED ENTRY</span>
           </div>
 
-          {/* スリムリスト構造 */}
           <div className="divide-y divide-slate-200 bg-white">
             {newJobs.length > 0 ? (
               newJobs.map((job) => (
                 <div key={job.id} className="p-3 hover:bg-slate-50 flex items-center justify-between gap-3 transition-colors text-xs font-medium">
                   
-                  {/* 左側：種別バッジ ＆ 緊急度バッジ ＆ 案件名タイトル */}
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="bg-slate-100 border border-slate-300 text-[10px] font-bold px-1.5 py-0.5 rounded text-slate-600 whitespace-nowrap flex-shrink-0">
                       {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト'}
                     </span>
                     
-                    {/* 💡【新設】緊急度のバッジ化（通常・高め・至急をカラーで完全出し分け） */}
                     {job.urgency === "3" ? (
                       <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0">至急</span>
                     ) : job.urgency === "2" ? (
@@ -253,7 +287,6 @@ export default function WorkerDashboard() {
                     </div>
                   </div>
                   
-                  {/* 右側：「期日：」の文字表示 ＆ 詳細リンク */}
                   <div className="flex items-center gap-4 flex-shrink-0">
                     <span className="text-[11px] text-slate-500 font-mono">
                       ⏳ 期日：{job.deadline || "未設定"}

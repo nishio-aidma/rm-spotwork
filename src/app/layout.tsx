@@ -15,8 +15,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "業務管理システム",
-  description: "業務受託管理システム",
+  title: {
+    default: "すきわ～く",
+    template: "%s | すきわ～く" // 各ページの詳細を開いた時に「案件詳細 | すきわ～く」となる美しい設定です
+  },
+  description: "スポットワーク管理システム",
 };
 
 export default function RootLayout({
