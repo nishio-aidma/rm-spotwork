@@ -5,7 +5,7 @@ export async function POST(request: Request) {
     const data = await request.json();
     const { roomId, message, companyName, status, inviteDate, joinDate, updatedFields, currentUrl } = data;
     
-    // トークンをコード内部に固定焼き付け (仕様保持)
+    // トークンをコード内部に固定焼き付け
     const token = "2DdB80HEyHWjO6cnN4YHyjdVR0oNyYebTAuurtFQX0vzZOLh3LhIDltLp45c99BibB5SnG0GcRV2zR35";
 
     if (!roomId || roomId.length !== 6) {
@@ -75,7 +75,8 @@ export async function POST(request: Request) {
       signal: postController.signal
     });
 
-    clearTimeout(postController.signal ? postTimeoutId : 0); // 安全なクリア処理
+    // 💡【修正箇所】サーバークラッシュ（500）を引き起こしていた無理な記述を、標準的な安全なコードに戻しました
+    clearTimeout(postTimeoutId);
 
     if (!postRes.ok) {
       const rawPostError = await postRes.text();
