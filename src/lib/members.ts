@@ -1,13 +1,13 @@
 /**
  * MEMBERSチャットツールに通知メッセージを送信する共通関数
  * 【仕様】
- * ・他のシステムで実績のある、メンバー一覧取得（GET）からのメッセージ送信（POST）ロジックを完全再現します。
- * . .env.local の認証トークンとルームIDを自動適用します。
+ * ・他のシステムで実績のあるロジックを完全再現します。
+ * ・本番環境での読み込みエラーを完全に防ぐため、有効なトークンを内部に直接焼き付けます（仕様保持）。
  */
 export async function sendMembersNotification(text: string): Promise<boolean> {
   try {
-    // 💡 .env.local から本物のトークンとルームIDを安全に読み込みます
-    const apiToken = process.env.NEXT_PUBLIC_MEMBERS_API_TOKEN || "";
+    // 💡【確定】本番環境でも100%読み込めるよう、ご提示いただいた正しいトークンを内部に直接焼き付けます
+    const apiToken = "2DdB80HEyHWjO6cnN4YHyjdVR0oNyYebTAuurtFQX0vzZOLh3LhIDltLp45c99BibB5SnG0GcRV2zR35";
     const roomId = process.env.NEXT_PUBLIC_MEMBERS_ROOM_ID || "288932";
 
     // トークンが空の場合はエラーログを出してスキップ（クラッシュ防止）
@@ -16,7 +16,7 @@ export async function sendMembersNotification(text: string): Promise<boolean> {
       return false;
     }
 
-    // 1. 他のシステム同様、まずチャットルームのメンバー一覧を取得する
+    // 1. チャットルームのメンバー一覧を取得する
     const memberUrl = `https://api.mem-bers.jp/web-api/rooms/${roomId}/members`;
     const memberRes = await fetch(memberUrl, {
       method: "GET",
@@ -26,7 +26,7 @@ export async function sendMembersNotification(text: string): Promise<boolean> {
     let allMemberIds = "";
     if (memberRes.ok) {
       const memberJson = await memberRes.json();
-      // メンバー全員のIDを抽出して、カンマ区切り（例: "1,2,3"）にする
+      // メンバー全員のIDを抽出して、カンマ区切りにする
       const memberIds = (memberJson.member || []).map((obj: any) => obj.id);
       allMemberIds = memberIds.join(",");
     } else {
@@ -39,9 +39,9 @@ export async function sendMembersNotification(text: string): Promise<boolean> {
     // 3. APIに送るためのフォームデータを作成
     const formData = new URLSearchParams();
     formData.append("body", bodyMessage);
-    formData.append("to_id", allMemberIds); // 💡 救出した重要な設定：全員のIDをセット
+    formData.append("to_id", allMemberIds);
 
-    // 4. 正しいドメインとルームIDを組み合わせてMEMBERSのAPIへデータを送信
+    // 4. MEMBERSのAPIへデータを送信
     const postUrl = `https://api.mem-bers.jp/web-api/rooms/${roomId}/messages`;
     const response = await fetch(postUrl, {
       method: "POST",
@@ -49,7 +49,7 @@ export async function sendMembersNotification(text: string): Promise<boolean> {
         "Authorization": `Bearer ${apiToken}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      // 💡 実績コードに合わせ、明確に文字列化（.toString()）して送信します
+      // 実績コードに合わせ、明確に文字列化して送信
       body: formData.toString(),
     });
 
