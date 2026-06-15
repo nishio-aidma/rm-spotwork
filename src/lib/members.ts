@@ -1,51 +1,66 @@
 /**
  * MEMBERSチャットツールに通知メッセージを送信する共通関数
- * * 【仕様】
- * ・引数のテキスト内にある改行（\n）を <br> に自動変換します。
- * ・先頭に @all を付与して全員へメンションを飛ばします。
- * ・.env.local の認証トークンとルームIDを自動適用します。
+ * 【仕様】
+ * ・他のシステムで実績のある、メンバー一覧取得（GET）からのメッセージ送信（POST）ロジックを完全再現します。
+ * . .env.local の認証トークンとルームIDを自動適用します。
  */
 export async function sendMembersNotification(text: string): Promise<boolean> {
-    try {
-      // 1. 本文の改行コード（\n）を <br> に変換
-      const formattedText = text.replace(/\n/g, "<br>");
-  
-      // 2. 全員宛メンション（@all）を先頭に付与（後ろに半角スペース）
-      const bodyMessage = `@all ${formattedText}`;
-  
-      // 3. APIに送るためのフォームデータを作成（to_idは@allのため空で送信）
-      const params = new URLSearchParams();
-      params.append("body", bodyMessage);
-  
-      // 💡【確定】.env.local から本物のトークンとルームIDを安全に読み込みます
-      const apiToken = process.env.NEXT_PUBLIC_MEMBERS_API_TOKEN || "";
-      const roomId = process.env.NEXT_PUBLIC_MEMBERS_ROOM_ID || "288932"; // 万が一空なら指定のID
-  
-      // トークンが空の場合はエラーログを出してスキップ（クラッシュ防止）
-      if (!apiToken) {
-        console.error("MEMBERS通知エラー: トークンが設定されていません。");
-        return false;
-      }
-  
-      // 4. 正しいドメインとルームIDを組み合わせてMEMBERSのAPIへデータを送信
-      const response = await fetch(`https://api.mem-bers.jp/web-api/rooms/${roomId}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          // 💡 401エラーを解決するため、正しい合言葉（トークン）をヘッダーにセット
-          "Authorization": `Bearer ${apiToken}`,
-        },
-        body: params,
-      });
-  
-      if (!response.ok) {
-        throw new Error(`MEMBERS APIエラー: ${response.status} ${response.statusText}`);
-      }
-  
-      console.log("MEMBERSへの通知送信に成功しました！");
-      return true;
-    } catch (error) {
-      console.error("MEMBERSへの通知送信に失敗しました:", error);
+  try {
+    // 💡 .env.local から本物のトークンとルームIDを安全に読み込みます
+    const apiToken = process.env.NEXT_PUBLIC_MEMBERS_API_TOKEN || "";
+    const roomId = process.env.NEXT_PUBLIC_MEMBERS_ROOM_ID || "288932";
+
+    // トークンが空の場合はエラーログを出してスキップ（クラッシュ防止）
+    if (!apiToken) {
+      console.error("MEMBERS通知エラー: トークンが設定されていません。");
       return false;
     }
+
+    // 1. 他のシステム同様、まずチャットルームのメンバー一覧を取得する
+    const memberUrl = `https://api.mem-bers.jp/web-api/rooms/${roomId}/members`;
+    const memberRes = await fetch(memberUrl, {
+      method: "GET",
+      headers: { "Authorization": `Bearer ${apiToken}` }
+    });
+
+    let allMemberIds = "";
+    if (memberRes.ok) {
+      const memberJson = await memberRes.json();
+      // メンバー全員のIDを抽出して、カンマ区切り（例: "1,2,3"）にする
+      const memberIds = (memberJson.member || []).map((obj: any) => obj.id);
+      allMemberIds = memberIds.join(",");
+    } else {
+      console.warn(`MEMBERSメンバー取得失敗: ${memberRes.status}`);
+    }
+
+    // 2. 本文の先頭に全員宛の記号を付与（実績コードに合わせ改行は \n のまま扱います）
+    const bodyMessage = `@all\n${text}`;
+
+    // 3. APIに送るためのフォームデータを作成
+    const formData = new URLSearchParams();
+    formData.append("body", bodyMessage);
+    formData.append("to_id", allMemberIds); // 💡 救出した重要な設定：全員のIDをセット
+
+    // 4. 正しいドメインとルームIDを組み合わせてMEMBERSのAPIへデータを送信
+    const postUrl = `https://api.mem-bers.jp/web-api/rooms/${roomId}/messages`;
+    const response = await fetch(postUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiToken}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      // 💡 実績コードに合わせ、明確に文字列化（.toString()）して送信します
+      body: formData.toString(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`MEMBERS APIエラー: ${response.status} ${response.statusText}`);
+    }
+
+    console.log("MEMBERSへの通知送信に成功しました！");
+    return true;
+  } catch (error) {
+    console.error("MEMBERSへの通知送信に失敗しました:", error);
+    return false;
   }
+}
