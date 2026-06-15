@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { collection, addDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import OwnerShell from "@/components/OwnerShell";
+// 💡 先ほど作成したMEMBERS通知用の共通関数をインポート
+import { sendMembersNotification } from "@/lib/members";
 
 // 簡単なURLバリデーション関数（ボタンの表示・非表示用）
 const isValidUrl = (url: string) => {
@@ -44,6 +46,9 @@ function JobForm() {
   const [modalTitle, setModalTitle] = useState("");
   const [modalMessage, setModalMessage] = useState("");
   const [modalTargetStatus, setModalTargetStatus] = useState<'open' | 'draft' | null>(null);
+
+  // 💡【新設】チャット通知用の申し送りメッセージを管理するステート
+  const [noticeMessage, setNoticeMessage] = useState("");
 
   // コピーボタン・編集ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
   useEffect(() => {
@@ -90,6 +95,10 @@ function JobForm() {
     }
 
     setModalTargetStatus(status);
+    // 💡 公開処理のときだけ、前回の入力をクリアしてメッセージ入力の準備をする
+    if (status === 'open') {
+      setNoticeMessage("");
+    }
     
     // 💡【文言統一】「複製」から「コピー」へ完全変更
     if (existingJobId) {
@@ -124,7 +133,6 @@ function JobForm() {
       if (existingJobId) {
         const jobRef = doc(db, "jobs", existingJobId);
         await updateDoc(jobRef, sharedFields);
-        // 💡 Windowsのデフォルトアラート(alert)を完全抹消！何も出さずに一覧へ戻るスマートな体験へ
         router.push(`/owner/jobs/${existingJobId}`);
       } else {
         await addDoc(collection(db, "jobs"), {
@@ -135,11 +143,39 @@ function JobForm() {
         });
         router.push("/owner/jobs");
       }
+
+      // 💡【新設】公開（statusが'open'）のときのみ、MEMBERSへのチャット通知を送信する
+      if (modalTargetStatus === 'open') {
+        const typeLabel = jobType === 'form_posting' ? "✉️ フォーム投稿" : "📋 リスト作成";
+        
+        // ご指定いただいたテンプレート文面に、フォームから取得したデータを安全にはめ込みます
+        const chatTemplate = `🔥🔥🔥spotworkに新しい案件が追記されました🔥🔥🔥
+
+✏️追加された案件：${formData.title}
+
+🏢クライアント：${formData.scClient || "（未入力）"}
+
+📚フォーム/リスト：${typeLabel}
+
+🔢件数：${formData.count} 件
+
+✅期日：${formData.deadline || "（未設定）"}
+
+💭申し送り内容：
+${noticeMessage || "（特になし）"}
+
+内容の確認をお願いいたします！📝`;
+
+        // 外部へのチャット送信を呼び出し（裏側でエラーが起きてもアプリ自体がクラッシュしないよう配慮）
+        await sendMembersNotification(chatTemplate);
+      }
+
     } catch (error) {
       console.error(error);
     } finally {
       setSubmitting(false);
       setModalTargetStatus(null);
+      setNoticeMessage(""); // 送信後にコメントをきれいにリセット
     }
   };
 
@@ -445,10 +481,26 @@ function JobForm() {
             <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>{modalTitle}</span>
             </div>
-            <div className="p-6 bg-white">
+            <div className="p-6 bg-white space-y-4">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 {modalMessage}
               </p>
+
+              {/* 💡【新設】公開時（'open'）のみ、モーダル内に申し送り文（自由コメント）の入力欄を表示 */}
+              {modalTargetStatus === 'open' && (
+                <div className="space-y-1 pt-2 border-t border-slate-100">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    💬 チャット通知メッセージの入力
+                  </label>
+                  <textarea
+                    rows={3}
+                    className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]"
+                    placeholder="チャットツールの『💭申し送り内容：』の部分に掲載される文章を入力してください。"
+                    value={noticeMessage}
+                    onChange={e => setNoticeMessage(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
@@ -463,7 +515,8 @@ function JobForm() {
                 onClick={handleModalConfirm}
                 className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
               >
-                はい、実行する
+                {/* 💡 ボタンの文字も状況に合わせて分かりやすく変更 */}
+                {modalTargetStatus === 'open' ? "はい、通知して公開する" : "はい、実行する"}
               </button>
             </div>
           </div>
