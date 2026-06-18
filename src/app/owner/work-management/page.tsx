@@ -57,22 +57,17 @@ export default function OwnerWorkManagementPage() {
 
       const logList = logSnap.docs.map(d => {
         const data = d.data() as any;
+        // ...
         const endTime = data.timestamp?.toDate() || new Date();
         const startTime = new Date(endTime.getTime() - (data.seconds || 0) * 1000);
         
         return {
-          id: d.id,
-          workerId: data.workerId || "",
-          workerName: workerMap[data.workerId] || "削除されたワーカー",
-          jobId: data.jobId || "",
-          jobTitle: data.jobTitle || "手動登録タスク",
-          seconds: Number(data.seconds || 0),
+          // ...
           startTime,
-          endTime,
-          checked: data.checked || false,
+          // ...
         };
       }).filter(log => {
-        // デフォルト当月でフィルター
+        // ここで判定している
         return log.startTime.getFullYear() === targetYear && log.startTime.getMonth() === targetMonth;
       });
 
