@@ -57,7 +57,24 @@ export default function OwnerWorkManagementPage() {
 
       const logList = logSnap.docs.map(d => {
         const data = d.data() as any;
-        const endTime = data.timestamp?.toDate() || new Date();
+        
+        // 【安全装置】timestampフィールドの型が何であっても確実にDateオブジェクトに変換する
+        let endTime = new Date();
+        if (data.timestamp) {
+          if (typeof data.timestamp.toDate === 'function') {
+            endTime = data.timestamp.toDate();
+          } else if (data.timestamp instanceof Date) {
+            endTime = data.timestamp;
+          } else if (data.timestamp.seconds) {
+            endTime = new Date(data.timestamp.seconds * 1000);
+          } else {
+            const parsed = new Date(data.timestamp);
+            if (!isNaN(parsed.getTime())) {
+              endTime = parsed;
+            }
+          }
+        }
+        
         const startTime = new Date(endTime.getTime() - (data.seconds || 0) * 1000);
         
         return {
@@ -73,11 +90,15 @@ export default function OwnerWorkManagementPage() {
         };
       }).filter(log => {
         // デフォルト当月でフィルター
-        return log.startTime.getFullYear() === targetYear && log.startTime.getMonth() === targetMonth;
+        return log.startTime && log.startTime.getFullYear() === targetYear && log.startTime.getMonth() === targetMonth;
       });
 
       // 日付の昇順（1日〜末日）できれいに整列
-      logList.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+      logList.sort((a, b) => {
+        const timeA = a.startTime ? a.startTime.getTime() : 0;
+        const timeB = b.startTime ? b.startTime.getTime() : 0;
+        return timeA - timeB;
+      });
       setLogs(logList);
 
     } catch (e) {
@@ -193,9 +214,17 @@ export default function OwnerWorkManagementPage() {
     const m = Math.floor((s % 3600) / 60);
     return `${h}h ${m}m`;
   };
-  const formatHM = (d: Date) => d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  
+  // 【安全装置】渡されたデータが正常なDateオブジェクトでない場合は空文字を返すガードを追加
+  const formatHM = (d: any) => {
+    if (!d || !(d instanceof Date) || isNaN(d.getTime())) return "--:--";
+    return d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  };
 
   const filteredLogs = logs.filter(log => workerFilter === "all" || log.workerId === workerFilter);
+
+  // 【追加機能】現在画面に表示されているログ（手動・自動すべて）の合計秒数を計算
+  const totalSeconds = filteredLogs.reduce((sum, log) => sum + (Number(log.seconds) || 0), 0);
 
   if (authLoading || loading) return <OwnerShell title="稼働管理"><div className="p-10 text-center text-slate-400 text-xs font-bold">稼働データを解析中...</div></OwnerShell>;
 
@@ -240,6 +269,24 @@ export default function OwnerWorkManagementPage() {
           </button>
         </div>
 
+        {/* 【新規追加】総稼働時間の集計表示セクション（手動追加分もここに100%反映されます） */}
+        <div className="bg-slate-50 p-4 rounded border-2 border-dashed border-slate-300 flex items-center justify-between select-none">
+          <div className="space-y-0.5">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+              {workerFilter === "all" ? "現在の表示対象: 全スタッフ合計" : "現在の表示対象: 選択中のスタッフ"}
+            </span>
+            <div className="text-xs font-bold text-slate-600">
+              当月の総稼働ログ件数: <span className="font-mono text-sm font-black text-slate-900">{filteredLogs.length}</span> 件
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] font-black text-slate-400 block uppercase tracking-wider当年分">期間内 総稼働時間</span>
+            <span className="font-mono text-xl font-black text-[#0082C8]">
+              {formatTextTime(totalSeconds)}
+            </span>
+          </div>
+        </div>
+
         {/* 2. メインテーブル */}
         <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
@@ -259,7 +306,11 @@ export default function OwnerWorkManagementPage() {
                 {filteredLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                     <td className="p-3 border-r border-slate-200 font-mono text-center text-slate-500 font-bold">
-                      {log.startTime.toLocaleDateString("ja-JP", { month: "2-digit", day: "2-digit" })}
+                      {log.startTime && log.startTime instanceof Date && !isNaN(log.startTime.getTime()) ? (
+                        log.startTime.toLocaleDateString("ja-JP", { month: "2-digit", day: "2-digit" })
+                      ) : (
+                        "--/--"
+                      )}
                     </td>
                     <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={log.workerName}>
                       {log.workerName}
@@ -321,7 +372,7 @@ export default function OwnerWorkManagementPage() {
           <form onSubmit={handleSaveForm} className="bg-white border border-slate-200 w-full max-w-md rounded-lg shadow-xl overflow-hidden text-slate-900">
             
             <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
-              <span>{editingLog ? "📝 稼働記録を修正・編集" : "➕ 稼働記録の手動追加・新規登録"}</span>
+              <span>{editingLog ? "📝 稼働記録を修正・編集" : "➕ 稼働記録を手動追加・新規登録"}</span>
             </div>
 
             <div className="p-5 bg-white space-y-4 text-xs font-bold text-slate-700">
@@ -411,7 +462,6 @@ export default function OwnerWorkManagementPage() {
           </form>
         </div>
       )}
-    {/* 💡 最後の閉じタグを WorkerShell から OwnerShell へ確実に修正！ */}
     </OwnerShell>
   );
 }
