@@ -21,11 +21,12 @@ export default function OwnerExportPage() {
       const start = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
       const currentMonthStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`; // 例: "2026-06"
 
-      // jobs（案件）、users（ワーカー）、そしてワーカーの月次確定ステータス（workerMonthlyStatus）を全取得
-      const [jobSnap, userSnap, statusSnap] = await Promise.all([
+      // jobs（案件）、users（ワーカー）、月次確定ステータス、そして【新設】稼働ログ（workLogs）を全取得
+      const [jobSnap, userSnap, statusSnap, logSnap] = await Promise.all([
         getDocs(collection(db, "jobs")),
         getDocs(query(collection(db, "users"), where("role", "==", "worker"))),
-        getDocs(collection(db, "workerMonthlyStatus"))
+        getDocs(collection(db, "workerMonthlyStatus")),
+        getDocs(collection(db, "workLogs")) // ← ここを追加して手動データも読み込みます
       ]);
 
       // ワーカーIDから名前を引ける辞書
@@ -44,7 +45,10 @@ export default function OwnerExportPage() {
       });
 
       const workerAgg: any = {};
+      const targetYear = viewDate.getFullYear();
+      const targetMonth = viewDate.getMonth();
 
+      // ロジック①：まずは「jobs」から案件の請負数・完了数を集計（元の仕様を完全保持）
       jobSnap.docs.forEach(d => {
         const job = d.data();
         const wId = job.workerId;
@@ -54,7 +58,7 @@ export default function OwnerExportPage() {
         const jobTimestamp = job.updatedAt || job.createdAt;
         if (jobTimestamp) {
           const jDate = jobTimestamp.toDate();
-          const isCurrentMonth = jDate.getFullYear() === viewDate.getFullYear() && jDate.getMonth() === viewDate.getMonth();
+          const isCurrentMonth = jDate.getFullYear() === targetYear && jDate.getMonth() === targetMonth;
           
           if (isCurrentMonth) {
             if (!workerAgg[wId]) {
@@ -69,22 +73,67 @@ export default function OwnerExportPage() {
             }
 
             const w = workerAgg[wId];
-            w.totalSeconds += (job.totalAccumulatedSeconds || 0);
             w.acceptedCount++;
 
             if (job.status === "completed") {
               w.completedCount++;
             }
-
-            w.activeDays.add(jDate.toDateString());
           }
+        }
+      });
+
+      // ロジック②：手動追加分を含む「workLogs」から、正確な稼働時間と活動日数を集計
+      logSnap.docs.forEach(d => {
+        const log = d.data();
+        const wId = log.workerId;
+
+        if (!wId) return;
+
+        // 【安全装置】timestamp型がどんな形式でも確実にDate型に直す
+        let endTime = null;
+        if (log.timestamp) {
+          if (typeof log.timestamp.toDate === 'function') {
+            endTime = log.timestamp.toDate();
+          } else if (log.timestamp instanceof Date) {
+            endTime = log.timestamp;
+          } else if (log.timestamp.seconds) {
+            endTime = new Date(log.timestamp.seconds * 1000);
+          } else {
+            endTime = new Date(log.timestamp);
+          }
+        }
+
+        if (!endTime || isNaN(endTime.getTime())) return;
+
+        // 開始時間を割り出し、選択された月と同じかチェック
+        const startTime = new Date(endTime.getTime() - (log.seconds || 0) * 1000);
+        const isCurrentMonth = startTime.getFullYear() === targetYear && startTime.getMonth() === targetMonth;
+
+        if (isCurrentMonth) {
+          // もしjobs側にデータがない（手動登録のみの）スタッフだった場合でも初期化する
+          if (!workerAgg[wId]) {
+            workerAgg[wId] = { 
+              name: userMap[wId] || "不明のワーカー", 
+              activeDays: new Set(), 
+              acceptedCount: 0, 
+              completedCount: 0, 
+              totalSeconds: 0,
+              submissionStatus: statusMap[wId] || "none" 
+            };
+          }
+
+          const w = workerAgg[wId];
+          // 秒数を加算（手動登録データも100%合算されます）
+          w.totalSeconds += (Number(log.seconds) || 0);
+          // 活動日を記録（重複しないようにSetで管理）
+          w.activeDays.add(startTime.toDateString());
         }
       });
 
       setSummaryData(Object.values(workerAgg).map((w: any) => ({
         ...w,
-        activeDays: w.activeDays.size === 0 ? 1 : w.activeDays.size,
-        duration: (w.totalSeconds / 3600).toFixed(2)
+        activeDays: w.activeDays.size === 0 ? 1 : w.activeDays.size, // 元の三項演算子の仕様を保持
+        duration: (w.totalSeconds / 3600).toFixed(2) // 時間（h）に変換して小数点2桁に
       })));
 
     } catch (e) { 
@@ -151,7 +200,7 @@ export default function OwnerExportPage() {
     <OwnerShell title="データ出力" subTitle="月次実績の確認とCSV出力">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 💡【超画期的新設】管理者用公式マニュアル常設リンクボード（ scannable なダークモダンデザイン） */}
+        {/* 💡【超画期的新設】管理者用公式マニュアル常設リンクボード */}
         <div className="bg-slate-900 text-white p-4 rounded border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md select-none animate-fade-in">
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
