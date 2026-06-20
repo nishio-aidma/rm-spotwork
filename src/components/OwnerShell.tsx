@@ -15,13 +15,12 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
   const pathname = usePathname();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  // 💡【変更点】「データ出力」のすぐ下に「稼働管理」を完璧にセットしました！
   const navigation = [
     { name: 'ダッシュ', href: '/owner/dashboard', icon: '📊' },
     { name: '案件管理', href: '/owner/jobs', icon: '📁' },
     { name: 'ワーカー', href: '/owner/users', icon: '👥' }, 
     { name: 'データ出力', href: '/owner/export', icon: '📥' },
-    { name: '稼働管理', href: '/owner/work-management', icon: '🛠️' }, // 💡 新設！
+    { name: '稼働管理', href: '/owner/work-management', icon: '🛠️' },
     { name: 'システム設定', href: '/owner/settings', icon: '⚙️' },
   ];
 
@@ -38,13 +37,18 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
   return (
     <div className="min-h-screen bg-[#F0F2F5] flex flex-col font-sans antialiased text-slate-900 select-none">
       
-      {/* 上部ヘッダー */}
-      <header className="h-14 bg-[#0082C8] flex items-center px-4 justify-between text-white shadow-sm z-10 flex-shrink-0">
+      {/* 上部ヘッダー：💡 背景を青からオリジナルセージグリーン（#5CA685）にリニューアル */}
+      <header className="h-14 bg-[#5CA685] flex items-center px-4 justify-between text-white shadow-sm z-10 flex-shrink-0">
         <div className="flex items-center gap-4">
           
-          {/* 【プロ仕様ロゴリフォーム】高級感のあるエンブレム座布団とシンボルマークのドッキング */}
-          <div className="bg-gradient-to-br from-white/18 to-white/4 px-3 py-1 rounded-md border border-white/25 flex items-center gap-2 select-none shadow-inner backdrop-blur-xs">
-            <span className="text-xl filter drop-shadow-sm leading-none animate-pulse">⏱️</span>
+          {/* 高級感のあるエンブレム座布団の中に、本物のオリジナルロゴ画像を綺麗にドッキング */}
+          <div className="bg-gradient-to-br from-white/18 to-white/4 px-2.5 py-1 rounded-md border border-white/25 flex items-center gap-2 select-none shadow-inner backdrop-blur-xs">
+            {/* 💡 暫定の絵文字を撤去し、本物の新ロゴ画像を配置しました */}
+            <img 
+              src="/sukiwa-ku_icon.png" 
+              alt="すきわ～く ロゴ" 
+              className="h-7 w-7 rounded object-cover shadow-xs select-none" 
+            />
             <div className="flex flex-col justify-center">
               <span className="text-[8px] font-black tracking-widest text-white/90 leading-none mb-0.5 uppercase">ちょいっと隙間におしごと</span>
               <span className="text-sm font-black tracking-wide leading-none text-white bg-clip-text bg-gradient-to-r from-white to-slate-100 drop-shadow-md">
@@ -80,7 +84,7 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
                   href={item.href}
                   className={`flex flex-col items-center justify-center aspect-square w-full rounded border transition-all ${
                     isActive 
-                      ? 'bg-white border-slate-400 text-[#0082C8] shadow-sm font-black'
+                      ? 'bg-white border-slate-400 text-[#5CA685] shadow-sm font-black' // 💡 アクティブ文字色をグリーンへ変更
                       : 'border-transparent text-slate-600 hover:bg-white/50 hover:text-slate-900'
                   }`}
                 >
