@@ -49,6 +49,9 @@ function JobForm() {
 
   // 💡【新設】チャット通知用の申し送りメッセージを管理するステート
   const [noticeMessage, setNoticeMessage] = useState("");
+  
+  // 💡【新設】チャット通知を送信するかどうかのチェックボックス用ステート（デフォルトON）
+  const [shouldNotify, setShouldNotify] = useState(true);
 
   // コピーボタン・編集ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
   useEffect(() => {
@@ -98,6 +101,7 @@ function JobForm() {
     // 💡 公開処理のときだけ、前回の入力をクリアしてメッセージ入力の準備をする
     if (status === 'open') {
       setNoticeMessage("");
+      setShouldNotify(true); // モーダルを開くときはデフォルトでチェックをONにする
     }
     
     // 💡【文言統一】「複製」から「コピー」へ完全変更
@@ -144,8 +148,8 @@ function JobForm() {
         router.push("/owner/jobs");
       }
 
-      // 💡【新設】公開（statusが'open'）のときのみ、MEMBERSへのチャット通知を送信する
-      if (modalTargetStatus === 'open') {
+      // 💡【仕様変更】公開かつ、チェックボックスがONのときのみ、MEMBERSへのチャット通知を送信する
+      if (modalTargetStatus === 'open' && shouldNotify) {
         const typeLabel = jobType === 'form_posting' ? "✉️ フォーム投稿" : "📋 リスト作成";
         
         // ご指定いただいたテンプレート文面に、フォームから取得したデータを安全にはめ込みます
@@ -486,19 +490,36 @@ ${noticeMessage || "（特になし）"}
                 {modalMessage}
               </p>
 
-              {/* 💡【新設】公開時（'open'）のみ、モーダル内に申し送り文（自由コメント）の入力欄を表示 */}
+              {/* 💡【仕様変更】公開時（'open'）のみ、モーダル内に通知のチェックボックスを表示 */}
               {modalTargetStatus === 'open' && (
-                <div className="space-y-1 pt-2 border-t border-slate-100">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                    💬 チャット通知メッセージの入力
+                <div className="space-y-3 pt-2 border-t border-slate-100">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-slate-300 text-[#0082C8] focus:ring-[#0082C8]"
+                      checked={shouldNotify}
+                      onChange={e => setShouldNotify(e.target.checked)}
+                    />
+                    <span className="text-[11px] font-black text-slate-700">
+                      💬 MEMBERSチャットへ公開通知を送る
+                    </span>
                   </label>
-                  <textarea
-                    rows={3}
-                    className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]"
-                    placeholder="チャットツールの『💭申し送り内容：』の部分に掲載される文章を入力してください。"
-                    value={noticeMessage}
-                    onChange={e => setNoticeMessage(e.target.value)}
-                  />
+
+                  {/* 💡 チェックが入っているときだけメッセージ入力欄を展開 */}
+                  {shouldNotify && (
+                    <div className="space-y-1 animate-fadeIn">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                        💬 チャット通知メッセージの入力
+                      </label>
+                      <textarea
+                        rows={3}
+                        className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]"
+                        placeholder="チャットツールの『💭申し送り内容：』の部分に掲載される文章を入力してください。"
+                        value={noticeMessage}
+                        onChange={e => setNoticeMessage(e.target.value)}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -515,8 +536,10 @@ ${noticeMessage || "（特になし）"}
                 onClick={handleModalConfirm}
                 className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
               >
-                {/* 💡 ボタンの文字も状況に合わせて分かりやすく変更 */}
-                {modalTargetStatus === 'open' ? "はい、通知して公開する" : "はい、実行する"}
+                {/* 💡 通知の有無によってボタン文字列を賢く切り替え */}
+                {modalTargetStatus === 'open' 
+                  ? (shouldNotify ? "はい、通知して公開する" : "はい、通知なしで公開する")
+                  : "はい、実行する"}
               </button>
             </div>
           </div>

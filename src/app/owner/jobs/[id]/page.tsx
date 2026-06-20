@@ -20,12 +20,15 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   const [submitting, setSubmitting] = useState(false);
 
   // シンプルモダン確認ポップアップ用の管理ステート
+  // 💡【仕様変更】"reject"（差し戻しアクション）を型に追加
   const [modalOpen, setModalOpen] = useState(false);
-  // どのアクション（下書き戻し / 検収承認 / 公開）を呼ぶかを識別するステート
-  const [modalType, setModalType] = useState<"draft" | "approve" | "publish" | null>(null);
+  const [modalType, setModalType] = useState<"draft" | "approve" | "publish" | "reject" | null>(null);
 
   // コピー完了通知用のポップステート
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // 💡【新設】詳細画面側の公開モーダル用通知切り替えチェックボックス（デフォルトON）
+  const [shouldNotify, setShouldNotify] = useState(true);
 
   useEffect(() => {
     async function fetchJob() {
@@ -39,11 +42,11 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       } catch (error) {
         console.error(error);
       } finally {
-        setLoading(false);
+        loading && setLoading(false);
       }
     }
     if (!authLoading) fetchJob();
-  }, [id, user, authLoading]);
+  }, [id, user, authLoading, loading]);
 
   // 時間テキスト変換
   const formatTime = (s: number) => {
@@ -73,7 +76,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     }
 
     try {
-      const memberUrl = `https://api.mem-bers.jp/web-api/rooms/${roomId}/members`;
+      const memberUrl = `https://api.mem-bars.jp/web-api/rooms/${roomId}/members`;
       const memberRes = await fetch(memberUrl, {
         method: "GET",
         headers: { "Authorization": `Bearer ${token}` }
@@ -92,7 +95,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
       const messageBody = `🚀 【案件公開通知】新しい案件が公開されました！\n\n【案件タイトル】 ${targetJob.title || "未設定"}\n【仕事種別】 ${jobTypeName}\n【SCクライアント】 ${targetJob.scClient || "-"}\n【予定作業件数】 ${targetJob.count || 0} 件\n【指定納期】 ${targetJob.deadline || "未設定"}\n\n👇 案件の詳細確認・受諾はこちらから！\n${jobUrl}`;
 
-      const postUrl = `https://api.mem-bers.jp/web-api/rooms/${roomId}/messages`;
+      const postUrl = `https://api.mem-bars.jp/web-api/rooms/${roomId}/messages`;
       const formData = new FormData();
       formData.append("body", messageBody);
       if (allMemberIds) {
@@ -111,7 +114,10 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     }
   };
 
-  const triggerModal = (type: "draft" | "approve" | "publish") => {
+  const triggerModal = (type: "draft" | "approve" | "publish" | "reject") => {
+    if (type === "publish") {
+      setShouldNotify(true); // 公開時はチェックボックスを初期化
+    }
     setModalType(type);
     setModalOpen(true);
   };
@@ -152,7 +158,19 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         const updatedJob = { ...job, status: "open" };
         setJob(updatedJob);
 
-        await sendMembersNotification(updatedJob);
+        // 💡 チェックがついているときだけ通知を発動
+        if (shouldNotify) {
+          await sendMembersNotification(updatedJob);
+        }
+      }
+
+      // 💡【新設】差し戻し確定処理
+      else if (action === "reject") {
+        await updateDoc(jobRef, {
+          status: "assigned", // 受諾済み（作業準備中）に戻すことで、ワーカーが業務再開→再完了できるようにします
+          updatedAt: serverTimestamp()
+        });
+        setJob((prev: any) => ({ ...prev, status: "assigned" }));
       }
     } catch (e) {
       console.error(e);
@@ -318,7 +336,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           )}
 
-          {/* 💡【超絶ドッキング】ワーカーから提出されたリアルタイム報告コメント表示ボード */}
+          {/* ワーカーから提出されたリアルタイム報告コメント表示ボード */}
           {job.status !== "open" && job.status !== "draft" && (
             <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
               <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">
@@ -388,15 +406,27 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
+                {/* 💡【仕様変更】検収待ち（review）の時、承認ボタンに加えて「差し戻し」ボタンを表示 */}
                 {job.status === "review" && (
-                  <button 
-                    type="button"
-                    onClick={() => triggerModal("approve")}
-                    disabled={submitting}
-                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded border border-black/10 shadow-md transition-colors"
-                  >
-                    ✓ 稼働時間を承認して検収完了にする
-                  </button>
+                  <div className="space-y-2 bg-slate-50 p-2.5 border border-slate-300 rounded">
+                    <button 
+                      type="button"
+                      onClick={() => triggerModal("approve")}
+                      disabled={submitting}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded border border-black/10 shadow-md transition-colors"
+                    >
+                      ✓ 稼働時間を承認して検収完了にする
+                    </button>
+                    
+                    <button 
+                      type="button"
+                      onClick={() => triggerModal("reject")}
+                      disabled={submitting}
+                      className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded border border-black/10 shadow-sm transition-colors"
+                    >
+                      ↩ 案件をワーカーに差し戻す
+                    </button>
+                  </div>
                 )}
 
                 <button 
@@ -426,22 +456,44 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
+            <div className={`text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none ${
+              modalType === "reject" ? "bg-amber-500" : "bg-[#0082C8]"
+            }`}>
               <span>
                 {modalType === "publish" ? "🟢 案件の公開確認" : 
-                 modalType === "draft" ? "🔒 募集停止の確認" : "✓ 案件の検収承認確認"}
+                 modalType === "draft" ? "🔒 募集停止の確認" : 
+                 modalType === "reject" ? "↩ 案件の差し戻し確認" : "✓ 案件の検収承認確認"}
               </span>
             </div>
 
-            <div className="p-6 bg-white">
+            <div className="p-6 bg-white space-y-3">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 {modalType === "publish"
                   ? "この下書き案件を全体に公開し、ワーカーが即座に応募・閲覧できる状態にしますか？"
                   : modalType === "draft"
                   ? "この案件の受諾募集を一度ストップし、非公開の『下書き状態』に戻しますか？\n\n戻すと、ワーカー側の案件を探す画面から一時的に表示が消えます。"
+                  : modalType === "reject"
+                  ? "提出された報告を差し戻し、ワーカーのステータスを『受諾済み（作業準備中）』に戻しますか？\n\n戻すことで、ワーカーがもう一度タイマーを起動して業務の再開と再提出を行えるようになります。"
                   : "この案件の作業内容および稼働時間を承認（検収完了）しますか？\n\n確定するとステータスが『完了』となり、ワーカー実績として確定します。"
                 }
               </p>
+
+              {/* 💡【仕様変更】詳細画面から公開（publish）する時も、通知のオンオフチェックボックスを表示 */}
+              {modalType === "publish" && (
+                <div className="pt-2 border-t border-slate-100">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-slate-300 text-[#0082C8] focus:ring-[#0082C8]"
+                      checked={shouldNotify}
+                      onChange={e => setShouldNotify(e.target.checked)}
+                    />
+                    <span className="text-[11px] font-black text-slate-700">
+                      💬 MEMBERSチャットへ公開通知を送る
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
@@ -456,7 +508,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 type="button"
                 onClick={handleModalConfirm}
                 className={`px-4 py-2 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm ${
-                  modalType === "draft" ? "bg-slate-700 hover:bg-slate-800" : "bg-emerald-600 hover:bg-emerald-700"
+                  modalType === "draft" ? "bg-slate-700 hover:bg-slate-800" : 
+                  modalType === "reject" ? "bg-amber-500 hover:bg-amber-600" : "bg-emerald-600 hover:bg-emerald-700"
                 }`}
               >
                 はい、実行する
