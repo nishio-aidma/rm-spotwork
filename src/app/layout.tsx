@@ -20,6 +20,10 @@ export const metadata: Metadata = {
     template: "%s | すきわ～く" // 各ページの詳細を開いた時に「案件詳細 | すきわ～く」となる美しい設定です
   },
   description: "スポットワーク管理システム",
+  // 💡【新設】publicフォルダに配置したオリジナル画像をChromeのアイコン（ファビコン）として読み込ませる設定
+  icons: {
+    icon: "/sukiwa-ku_icon.png",
+  },
 };
 
 export default function RootLayout({
