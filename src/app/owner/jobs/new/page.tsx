@@ -2,10 +2,11 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
-import { collection, addDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+// 💡 Firestoreから現在のデータを1回読み込むために「getDoc」を追加インポート
+import { collection, addDoc, doc, updateDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import OwnerShell from "@/components/OwnerShell";
-// 💡 先ほど作成したMEMBERS通知用の共通関数をインポート
+// MEMBERS通知用の共通関数をインポート
 import { sendMembersNotification } from "@/lib/members";
 
 // 簡単なURLバリデーション関数（ボタンの表示・非表示用）
@@ -22,7 +23,7 @@ function JobForm() {
   const [submitting, setSubmitting] = useState(false);
   const [jobType, setJobType] = useState<'form_posting' | 'list_creation'>('form_posting');
   
-  // 💡上書き編集（Editモード）かどうかを判定するためのID退避用ステート
+  // 上書き編集（Editモード）かどうかを判定するためのID退避用ステート
   const [existingJobId, setExistingJobId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
@@ -47,10 +48,10 @@ function JobForm() {
   const [modalMessage, setModalMessage] = useState("");
   const [modalTargetStatus, setModalTargetStatus] = useState<'open' | 'draft' | null>(null);
 
-  // 💡【新設】チャット通知用の申し送りメッセージを管理するステート
+  // チャット通知用の申し送りメッセージを管理するステート
   const [noticeMessage, setNoticeMessage] = useState("");
   
-  // 💡【新設】チャット通知を送信するかどうかのチェックボックス用ステート（デフォルトON）
+  // チャット通知を送信するかどうかのチェックボックス用ステート（デフォルトON）
   const [shouldNotify, setShouldNotify] = useState(true);
 
   // コピーボタン・編集ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
@@ -98,13 +99,11 @@ function JobForm() {
     }
 
     setModalTargetStatus(status);
-    // 💡 公開処理のときだけ、前回の入力をクリアしてメッセージ入力の準備をする
     if (status === 'open') {
       setNoticeMessage("");
       setShouldNotify(true); // モーダルを開くときはデフォルトでチェックをONにする
     }
     
-    // 💡【文言統一】「複製」から「コピー」へ完全変更
     if (existingJobId) {
       setModalTitle(status === 'open' ? "🔓 編集内容の公開適用" : "📁 編集内容の下書き保存");
       setModalMessage(`修正した内容を既存の案件（ID: ${existingJobId}）に上書き保存しますか？\n\nタイトル：${formData.title}`);
@@ -126,21 +125,53 @@ function JobForm() {
     setSubmitting(true);
 
     try {
-      const sharedFields = {
+      // 上書きする基本データを組み立て（statusは条件に応じて後から決定）
+      const sharedFields: any = {
         ...formData,
         jobType,
         ownerId: "system_shared_owner",
-        status: modalTargetStatus,
         updatedAt: serverTimestamp()
       };
 
+      let finalStatus = modalTargetStatus;
+      let isStatusChangedToOpen = modalTargetStatus === 'open'; // 本当に新規公開された時だけ通知するための判定フラグ
+
       if (existingJobId) {
         const jobRef = doc(db, "jobs", existingJobId);
-        await updateDoc(jobRef, sharedFields);
+        
+        // 💡【バグ修正】既存案件の現在のステータスを裏側でチェックする
+        const jobSnap = await getDoc(jobRef);
+        if (jobSnap.exists()) {
+          const currentJobData = jobSnap.data();
+          const currentStatus = currentJobData.status || "draft";
+          
+          // 💡 すでにワーカーが紐づいて動いている・完了しているステータス一覧
+          const isAlreadyStarted = ["assigned", "working", "paused", "review", "completed"].includes(currentStatus);
+          
+          if (isAlreadyStarted) {
+            // 🛑 進行中・完了案件の場合は、ステータスの強制巻き戻しを「完全ブロック」して現在の状態を維持する！
+            finalStatus = currentStatus;
+            isStatusChangedToOpen = false; // 進行中の文面修正なので、チャット通知もスキップ
+          } else {
+            // まだ誰も請け負っていない（下書きやopen、期限切れ）場合、
+            // すでに公開中（open）の案件を再度「公開状態で保存」しただけなら再通知をスキップ
+            if (currentStatus === 'open' && modalTargetStatus === 'open') {
+              isStatusChangedToOpen = false;
+            }
+          }
+        }
+
+        // 確定したステータスを適用してアップデート
+        await updateDoc(jobRef, {
+          ...sharedFields,
+          status: finalStatus
+        });
         router.push(`/owner/jobs/${existingJobId}`);
       } else {
+        // 新規作成の場合は、ボタンの指定通りのステータス（openかdraft）で作成
         await addDoc(collection(db, "jobs"), {
           ...sharedFields,
+          status: finalStatus,
           createdBy: auth.currentUser.uid,
           createdAt: serverTimestamp(),
           totalAccumulatedSeconds: 0
@@ -148,11 +179,10 @@ function JobForm() {
         router.push("/owner/jobs");
       }
 
-      // 💡【仕様変更】公開かつ、チェックボックスがONのときのみ、MEMBERSへのチャット通知を送信する
-      if (modalTargetStatus === 'open' && shouldNotify) {
+      // 💡【バグ修正】新規に公開（statusが'open'に確定）され、かつ通知チェックがONのときのみチャットを飛ばす
+      if (finalStatus === 'open' && isStatusChangedToOpen && shouldNotify) {
         const typeLabel = jobType === 'form_posting' ? "✉️ フォーム投稿" : "📋 リスト作成";
         
-        // ご指定いただいたテンプレート文面に、フォームから取得したデータを安全にはめ込みます
         const chatTemplate = `🔥🔥🔥spotworkに新しい案件が追記されました🔥🔥🔥
 
 ✏️追加された案件：${formData.title}
@@ -170,7 +200,6 @@ ${noticeMessage || "（特になし）"}
 
 内容の確認をお願いいたします！📝`;
 
-        // 外部へのチャット送信を呼び出し（裏側でエラーが起きてもアプリ自体がクラッシュしないよう配慮）
         await sendMembersNotification(chatTemplate);
       }
 
@@ -281,7 +310,7 @@ ${noticeMessage || "（特になし）"}
             </div>
             
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">案件タイトル</label>
+              <label className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8] transition-colors">案件タイトル</label>
               <input 
                 required
                 className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8] transition-colors" 
@@ -490,7 +519,7 @@ ${noticeMessage || "（特になし）"}
                 {modalMessage}
               </p>
 
-              {/* 💡【仕様変更】公開時（'open'）のみ、モーダル内に通知のチェックボックスを表示 */}
+              {/* 公開時（'open'）のみ、モーダル内に通知のチェックボックスを表示 */}
               {modalTargetStatus === 'open' && (
                 <div className="space-y-3 pt-2 border-t border-slate-100">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -505,7 +534,7 @@ ${noticeMessage || "（特になし）"}
                     </span>
                   </label>
 
-                  {/* 💡 チェックが入っているときだけメッセージ入力欄を展開 */}
+                  {/* チェックが入っているときだけメッセージ入力欄を展開 */}
                   {shouldNotify && (
                     <div className="space-y-1 animate-fadeIn">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
@@ -536,7 +565,6 @@ ${noticeMessage || "（特になし）"}
                 onClick={handleModalConfirm}
                 className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
               >
-                {/* 💡 通知の有無によってボタン文字列を賢く切り替え */}
                 {modalTargetStatus === 'open' 
                   ? (shouldNotify ? "はい、通知して公開する" : "はい、通知なしで公開する")
                   : "はい、実行する"}
