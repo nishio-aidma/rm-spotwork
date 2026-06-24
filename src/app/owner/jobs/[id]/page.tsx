@@ -20,14 +20,13 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   const [submitting, setSubmitting] = useState(false);
 
   // シンプルモダン確認ポップアップ用の管理ステート
-  // 💡【仕様変更】"reject"（差し戻しアクション）を型に追加
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<"draft" | "approve" | "publish" | "reject" | null>(null);
 
   // コピー完了通知用のポップステート
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // 💡【新設】詳細画面側の公開モーダル用通知切り替えチェックボックス（デフォルトON）
+  // 詳細画面側の公開モーダル用通知切り替えチェックボックス（デフォルトON）
   const [shouldNotify, setShouldNotify] = useState(true);
 
   useEffect(() => {
@@ -116,7 +115,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
   const triggerModal = (type: "draft" | "approve" | "publish" | "reject") => {
     if (type === "publish") {
-      setShouldNotify(true); // 公開時はチェックボックスを初期化
+      setShouldNotify(true);
     }
     setModalType(type);
     setModalOpen(true);
@@ -158,16 +157,14 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         const updatedJob = { ...job, status: "open" };
         setJob(updatedJob);
 
-        // 💡 チェックがついているときだけ通知を発動
         if (shouldNotify) {
           await sendMembersNotification(updatedJob);
         }
       }
 
-      // 💡【新設】差し戻し確定処理
       else if (action === "reject") {
         await updateDoc(jobRef, {
-          status: "assigned", // 受諾済み（作業準備中）に戻すことで、ワーカーが業務再開→再完了できるようにします
+          status: "assigned",
           updatedAt: serverTimestamp()
         });
         setJob((prev: any) => ({ ...prev, status: "assigned" }));
@@ -194,6 +191,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         targetItems: job.targetItems || "",
         formContent: job.formContent || "",
         siteUrl: job.siteUrl || "",
+        additionalLinkTitle: job.additionalLinkTitle || "", // 💡 新設カスタム項目を安全に引き継ぎ
+        additionalLinkUrl: job.additionalLinkUrl || "",     // 💡 新設カスタム項目を安全に引き継ぎ
         procedures: Array.isArray(job.procedures) ? job.procedures : ["", "", ""],
         memo: job.memo || "" ,
         existingJobId: isEditMode ? job.id : null
@@ -210,7 +209,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   if (!job) return <OwnerShell title="エラー"><div className="p-10 text-center text-rose-600 font-bold text-xs">指定された案件が見つかりませんでした。</div></OwnerShell>;
 
   return (
-    <OwnerShell title="案件詳細・管理デスク" subTitle="発注内容の確認とワーカー稼働状況の監視">
+    <OwnerShell title="案件詳細・管理デスク" subTitle="発注内容 of Confirm とワーカー稼働の監視">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 max-w-full mx-auto pb-32 text-slate-900 font-sans antialiased">
         
         {/* 左側：メイン情報明細 */}
@@ -283,13 +282,11 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               </div>
             </div>
             
+            {/* 💡 リンク表示を下に集約したため、上部グリッドはサマリーへスマート化 */}
             <div className="p-3 flex flex-col justify-between min-h-[64px]">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力情報</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">関連リンク</span>
               <div className="mt-1 flex items-center justify-between">
-                <span className="text-[10px] text-slate-400 font-mono truncate max-w-[120px]">{job.inputInfo || job.targetItems || "未登録"}</span>
-                {(job.inputInfo || job.targetItems) && (
-                  <a href={job.inputInfo || job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-2 py-0.5 rounded transition-colors shadow-sm whitespace-nowrap">開白 ↗</a>
-                )}
+                <span className="text-[11px] text-[#5CA685] font-black">下にパッケージ集約 📦</span>
               </div>
             </div>
             
@@ -299,14 +296,66 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           </div>
 
-          <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
-            <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">
-              {job.jobType === "form_posting" ? "送信文面・内容データURL" : "抽出ターゲットサイトURL"}
+          {/* 💡【UI大規模パッケージ調整】3つの枠をセットで美しく並べ、URLテキストを隠した洗練されたリンク集 */}
+          <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
+            <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
+              🔗 作業詳細（各種リンク設定）
             </h2>
-            <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded p-2 text-xs">
-              <span className="font-mono text-slate-600 truncate max-w-md">{job.formContent || job.siteUrl || "URL指定なし"}</span>
-              {(job.formContent || job.siteUrl) && (
-                <a href={job.formContent || job.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">リンク先を開く ↗</a>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
+              {job.jobType === "form_posting" ? (
+                <>
+                  {/* 1. 送信文面内容 */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600">📄 送信文面内容</span>
+                    {job.formContent ? (
+                      <a href={job.formContent} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        リンクを開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+
+                  {/* 2. 入力情報 */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600">📋 入力情報リスト</span>
+                    {job.inputInfo ? (
+                      <a href={job.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        リンクを開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+
+                  {/* 3. 新設された3つ目の追加入力枠リンク */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600 truncate max-w-[130px]">
+                      🔗 {job.additionalLinkTitle || "その他追加リンク"}
+                    </span>
+                    {job.additionalLinkUrl ? (
+                      <a href={job.additionalLinkUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        リンクを開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* リスト作成のケース */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600">🌐 抽出ターゲットサイト</span>
+                    {job.siteUrl ? (
+                      <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        リンクを開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600">📋 入力項目（指示書等）</span>
+                    {job.targetItems ? (
+                      <a href={job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        リンクを開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -339,11 +388,11 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           {/* ワーカーから提出されたリアルタイム報告コメント表示ボード */}
           {job.status !== "open" && job.status !== "draft" && (
             <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
-              <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">
+              <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
                 📥 ワーカーからの報告コメント・作業メモ
               </h2>
               {job.workerComment && job.workerComment.trim() !== "" ? (
-                <div className="bg-blue-50/30 border border-blue-200 rounded p-3 text-xs text-slate-800 font-bold whitespace-pre-wrap leading-relaxed shadow-xs">
+                <div className="bg-emerald-50/40 border border-emerald-200 rounded p-3 text-xs text-slate-800 font-bold whitespace-pre-wrap leading-relaxed shadow-xs">
                   {job.workerComment}
                 </div>
               ) : (
@@ -376,9 +425,9 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 </div>
               </div>
 
-              <div className="p-3.5 bg-blue-50/60 border border-blue-200 text-slate-900 rounded font-sans shadow-inner space-y-1">
+              <div className="p-3.5 bg-emerald-50/40 border border-emerald-200 text-slate-900 rounded font-sans shadow-inner space-y-1">
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">TOTAL TIME / 累積稼働実績</span>
-                <p className="text-xl font-black text-[#0082C8] tracking-tight font-mono tabular-nums">
+                <p className="text-xl font-black text-[#5CA685] tracking-tight font-mono tabular-nums">
                   {formatTime(job.totalAccumulatedSeconds || 0)}
                 </p>
               </div>
@@ -406,7 +455,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
-                {/* 💡【仕様変更】検収待ち（review）の時、承認ボタンに加えて「差し戻し」ボタンを表示 */}
                 {job.status === "review" && (
                   <div className="space-y-2 bg-slate-50 p-2.5 border border-slate-300 rounded">
                     <button 
@@ -432,7 +480,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 <button 
                   type="button"
                   onClick={() => handleDuplicateJob(false)}
-                  className="w-full py-2.5 bg-[#0082C8] hover:bg-[#0072B5] border border-black/10 text-white text-xs font-black rounded transition-all shadow-sm text-center active:scale-95"
+                  className="w-full py-2.5 bg-[#5CA685] hover:bg-[#4A9272] border border-black/10 text-white text-xs font-black rounded transition-all shadow-sm text-center active:scale-95"
                 >
                   📄 この案件をコピーして新規作成
                 </button>
@@ -457,7 +505,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
             <div className={`text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none ${
-              modalType === "reject" ? "bg-amber-500" : "bg-[#0082C8]"
+              modalType === "reject" ? "bg-amber-500" : "bg-[#5CA685]"
             }`}>
               <span>
                 {modalType === "publish" ? "🟢 案件の公開確認" : 
@@ -478,13 +526,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 }
               </p>
 
-              {/* 💡【仕様変更】詳細画面から公開（publish）する時も、通知のオンオフチェックボックスを表示 */}
               {modalType === "publish" && (
                 <div className="pt-2 border-t border-slate-100">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
-                      className="w-4 h-4 rounded border-slate-300 text-[#0082C8] focus:ring-[#0082C8]"
+                      className="w-4 h-4 rounded border-slate-300 text-[#5CA685] focus:ring-[#5CA685]"
                       checked={shouldNotify}
                       onChange={e => setShouldNotify(e.target.checked)}
                     />
@@ -509,7 +556,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 onClick={handleModalConfirm}
                 className={`px-4 py-2 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm ${
                   modalType === "draft" ? "bg-slate-700 hover:bg-slate-800" : 
-                  modalType === "reject" ? "bg-amber-500 hover:bg-amber-600" : "bg-emerald-600 hover:bg-emerald-700"
+                  modalType === "reject" ? "bg-amber-500 hover:bg-amber-600" : "bg-[#5CA685] hover:bg-[#4A9272]"
                 }`}
               >
                 はい、実行する

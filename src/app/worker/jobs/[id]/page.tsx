@@ -153,7 +153,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       setModalTitle("🏁 完了報告を提出する");
       setModalMessage("本日の作業をすべて終了し、オーナーへ提出しますか？\n\n※現在最下部のメモ欄に入力されているコメントが、そのまま最終実績として提出されます。");
     }
-    // 💡【新設】保存成功時のリッチな表示定義
     else if (type === "save_success") {
       setModalTitle("✨ メモ一時保存完了");
       setModalMessage("報告コメント・作業メモをクラウドデータベースへ安全に一時保存しました！\n\nこの内容はいつでも書き換え可能で、右側の『作業を完了する』ボタンを押した際に最終実績としてオーナーへ自動提出されます。");
@@ -357,41 +356,82 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               </div>
             </div>
 
+            {/* 💡【デザイン統一】URLを非表示にして下のリンクパッケージセクションへ集約 */}
             <div className="p-3 flex flex-col justify-between min-h-[72px]">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                {job.jobType === 'form_posting' ? '入力情報' : '入力項目'}
-              </span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">関連リンク</span>
               <div className="mt-auto flex justify-between items-center">
-                <span className="text-[11px] font-bold text-slate-600">指示書等</span>
-                {job.jobType === 'form_posting' ? (
-                  job.inputInfo ? (
-                    <a href={job.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-2 py-1 rounded transition-colors shadow-sm whitespace-nowrap">開く ↗</a>
-                  ) : <span className="text-[10px] text-slate-300">-</span>
-                ) : (
-                  job.targetItems ? (
-                    <a href={job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-2 py-1 rounded transition-colors shadow-sm whitespace-nowrap">開く ↗</a>
-                  ) : <span className="text-[10px] text-slate-300">-</span>
-                )}
+                <span className="text-[11px] text-[#5CA685] font-black">下部にパッケージ集約 📦</span>
               </div>
             </div>
+            
             <div className="p-3 flex flex-col justify-between min-h-[72px]">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">予定作業件数</span>
               <p className="text-xs font-black text-slate-900 font-mono text-right mt-auto">{job.count || 0} 件</p>
             </div>
           </div>
 
-          <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
-            <div className="flex justify-between items-center">
-              <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">
-                {job.jobType === "form_posting" ? "送信文面内容データ" : "抽出サイトURLターゲット"}
-              </h2>
+          {/* 💡【UI大規模パッケージ調整】3つの枠をセットで美しく並べ、URLテキストを隠したワーカー向け洗練リンク集 */}
+          <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
+            <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
+              🔗 業務詳細（各種リンク設定）
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
               {job.jobType === "form_posting" ? (
-                job.formContent && <a href={job.formContent} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">📄 本文を開く ↗</a>
+                <>
+                  {/* 1. 送信文面内容 */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600">📄 送信文面内容</span>
+                    {job.formContent ? (
+                      <a href={job.formContent} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        本文を開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+
+                  {/* 2. 入力情報 */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600">📋 入力情報リスト</span>
+                    {job.inputInfo ? (
+                      <a href={job.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        指示書を開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+
+                  {/* 3. 新設された3つ目の追加入力枠リンク（ワーカー側表示） */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600 truncate max-w-[130px]">
+                      🔗 {job.additionalLinkTitle || "その他追加リンク"}
+                    </span>
+                    {job.additionalLinkUrl ? (
+                      <a href={job.additionalLinkUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        リンクを開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+                </>
               ) : (
-                job.siteUrl && <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">🌐 サイトを開く ↗</a>
+                <>
+                  {/* リスト作成のケース */}
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600">🌐 抽出ターゲットサイト</span>
+                    {job.siteUrl ? (
+                      <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        サイトを開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
+                    <span className="text-slate-600">📋 入力項目（指示書等）</span>
+                    {job.targetItems ? (
+                      <a href={job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                        指示書を開く ↗
+                      </a>
+                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+                  </div>
+                </>
               )}
             </div>
-            {!job.formContent && !job.siteUrl && <div className="text-xs text-slate-400 italic p-1">URLは指定されていません。</div>}
           </div>
 
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
@@ -417,13 +457,13 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </div>
           )}
 
-          {/* 報告コメント / 作業メモ入力 */}
+          {/* 💡【リニューアル】報告コメント / 作業メモ入力のテーマカラーを新ロゴに合わせたエメラルドトーンへ */}
           {isMyJob && (
-            <div className="bg-sky-50/50 border-2 border-sky-400/80 rounded p-4 space-y-2.5 shadow-md transition-all animate-fade-in">
-              <h2 className="text-xs font-black text-sky-950 uppercase tracking-wider border-l-4 border-[#0082C8] pl-2 flex items-center gap-1.5 select-none">
+            <div className="bg-emerald-50/30 border-2 border-emerald-400/60 rounded p-4 space-y-2.5 shadow-md transition-all animate-fade-in">
+              <h2 className="text-xs font-black text-emerald-950 uppercase tracking-wider border-l-4 border-[#5CA685] pl-2 flex items-center gap-1.5 select-none">
                 💬 報告コメント / 作業メモ入力
               </h2>
-              <p className="text-[10px] text-sky-800/80 font-bold leading-relaxed select-none">
+              <p className="text-[10px] text-emerald-800/80 font-bold leading-relaxed select-none">
                 ※作業中に気づいた点やオーナーへの引き継ぎ内容をいつでも自由にメモ・一時保存できます。ここに書いた内容は、右の「作業を完了する」ボタンを押したときに最終実績として自動提出されます。
               </p>
               <textarea
@@ -432,7 +472,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                 disabled={job.status === "review" || job.status === "completed"}
                 placeholder="例：50件目までフォーム送信完了しました。一部のアドレスがエラーだったため、SC上でスキップ処理を入れています。稼働ログに残らない特記事項など、自由にメモにご活用ください！"
                 rows={4}
-                className="w-full border-2 border-sky-300 rounded p-2.5 text-xs font-bold outline-none focus:border-[#0082C8] focus:ring-2 focus:ring-sky-100 bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500 resize-y shadow-inner transition-all"
+                className="w-full border-2 border-emerald-200 rounded p-2.5 text-xs font-bold outline-none focus:border-[#5CA685] focus:ring-2 focus:ring-emerald-100 bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500 resize-y shadow-inner transition-all"
               />
               {(job.status === "assigned" || job.status === "working" || job.status === "paused") && (
                 <div className="flex justify-end pt-0.5">
@@ -440,7 +480,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                     type="button"
                     onClick={handleSaveComment}
                     disabled={isSavingComment}
-                    className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-4 py-2 rounded border border-black/10 shadow-md transition-all active:scale-95 disabled:opacity-50"
+                    className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-4 py-2 rounded border border-black/10 shadow-md transition-all active:scale-95 disabled:opacity-50"
                   >
                     {isSavingComment ? "保存中..." : "💾 コメントを一時保存する"}
                   </button>
@@ -469,17 +509,18 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                 </div>
               </div>
 
+              {/* 💡 積算時間ボードの背景もエメラルドトーンにリニューアル */}
               {(job.status === "working" || job.status === "paused" || job.status === "review") && (
-                <div className="p-4 bg-blue-50/60 border-2 border-blue-200 text-slate-900 rounded font-sans shadow-inner space-y-3.5">
+                <div className="p-4 bg-emerald-50/40 border-2 border-emerald-200 text-slate-900 rounded font-sans shadow-inner space-y-3.5">
                   <div>
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">ACCUMULATED TIME / これまでの積算時間</span>
-                    <p className="text-xl font-black text-[#0082C8] tracking-tight font-mono tabular-nums">
+                    <p className="text-xl font-black text-[#5CA685] tracking-tight font-mono tabular-nums">
                       {formatTime(job.totalAccumulatedSeconds || 0)}
                     </p>
                   </div>
                   
                   {job.status === "working" && job.lastStartedAt && (
-                    <div className="border-t border-blue-200 pt-2.5">
+                    <div className="border-t border-emerald-200 pt-2.5">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">START TIME / 今回の開始時刻</span>
                       <p className="text-xs font-bold text-slate-600 tracking-wide">
                         📅 <span className="font-mono bg-white px-1 py-0.5 rounded border border-slate-300 text-slate-800">{formatStartTime(job.lastStartedAt)}</span> から継続中
@@ -507,7 +548,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                     type="button" 
                     onClick={() => triggerModal("accept")}
                     disabled={submitting}
-                    className="w-full py-3 bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-50"
+                    className="w-full py-3 bg-[#5CA685] hover:bg-[#4A9272] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-50"
                   >
                     {job.status === 'open' ? 'この案件を引き受ける' : '他の方が受諾済みの案件です'}
                   </button>
@@ -576,7 +617,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
+            <div className="bg-[#5CA685] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>{modalTitle}</span>
             </div>
 
@@ -586,13 +627,12 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               </p>
             </div>
 
-            {/* 💡【超進化】save_success の時は OK ボタン1発、それ以外の確認モードの時は いいえ／はい を動的に出し分け！ */}
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               {modalActionType === "save_success" ? (
                 <button
                   type="button"
                   onClick={() => { setModalOpen(false); setModalActionType(null); }}
-                  className="px-6 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                  className="px-6 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
                 >
                   OK
                 </button>
@@ -608,7 +648,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                   <button
                     type="button"
                     onClick={handleModalConfirm}
-                    className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                    className="px-4 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
                   >
                     はい、実行する
                   </button>

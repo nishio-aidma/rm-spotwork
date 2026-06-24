@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
-// 💡 Firestoreから現在のデータを1回読み込むために「getDoc」を追加インポート
+// Firestoreから現在のデータを1回読み込むために「getDoc」を追加インポート
 import { collection, addDoc, doc, updateDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import OwnerShell from "@/components/OwnerShell";
@@ -37,6 +37,8 @@ function JobForm() {
     targetItems: "", // リスト作成 > 「入力項目」URL用
     formContent: "", // フォーム投稿 > 「送信文面内容」URL用
     inputInfo: "",   // フォーム投稿 > 「入力情報」URL用
+    additionalLinkTitle: "", // 💡【新設】追加リンク用の任意タイトル
+    additionalLinkUrl: "",   // 💡【新設】追加リンク用のURL
     scClient: "",    // SCクライアント
     procedures: ["", "", ""],
     memo: ""         // メモ欄
@@ -76,6 +78,8 @@ function JobForm() {
           targetItems: baseData.targetItems || "",
           formContent: baseData.formContent || "",
           inputInfo: baseData.inputInfo || "",
+          additionalLinkTitle: baseData.additionalLinkTitle || "", // 💡 コピー・編集時の復元項目を追加
+          additionalLinkUrl: baseData.additionalLinkUrl || "",   // 💡 コピー・編集時の復元項目を追加
           procedures: Array.isArray(baseData.procedures) ? baseData.procedures : ["", "", ""],
           memo: baseData.memo || ""
         }));
@@ -139,13 +143,13 @@ function JobForm() {
       if (existingJobId) {
         const jobRef = doc(db, "jobs", existingJobId);
         
-        // 💡【バグ修正】既存案件の現在のステータスを裏側でチェックする
+        // 既存案件の現在のステータスを裏側でチェックする
         const jobSnap = await getDoc(jobRef);
         if (jobSnap.exists()) {
           const currentJobData = jobSnap.data();
           const currentStatus = currentJobData.status || "draft";
           
-          // 💡 すでにワーカーが紐づいて動いている・完了しているステータス一覧
+          // すでにワーカーが紐づいて動いている・完了しているステータス一覧
           const isAlreadyStarted = ["assigned", "working", "paused", "review", "completed"].includes(currentStatus);
           
           if (isAlreadyStarted) {
@@ -179,7 +183,7 @@ function JobForm() {
         router.push("/owner/jobs");
       }
 
-      // 💡【バグ修正】新規に公開（statusが'open'に確定）され、かつ通知チェックがONのときのみチャットを飛ばす
+      // 新規に公開（statusが'open'に確定）され、かつ通知チェックがONのときのみチャットを飛ばす
       if (finalStatus === 'open' && isStatusChangedToOpen && shouldNotify) {
         const typeLabel = jobType === 'form_posting' ? "✉️ フォーム投稿" : "📋 リスト作成";
         
@@ -282,7 +286,8 @@ ${noticeMessage || "（特になし）"}
 
         {/* 1. 基本設定セクション */}
         <section className="space-y-2">
-          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">基本設定</h2>
+          {/* 💡 テーマカラーをセージグリーン（border-[#5CA685]）へ調整 */}
+          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">基本設定</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
             <div className="grid grid-cols-2 gap-2">
               <button 
@@ -290,7 +295,7 @@ ${noticeMessage || "（特になし）"}
                 onClick={() => setJobType('form_posting')}
                 className={`py-2.5 rounded border-2 text-xs font-black transition-colors ${
                   jobType === 'form_posting' 
-                    ? 'bg-[#0082C8] text-white border-transparent' 
+                    ? 'bg-[#5CA685] text-white border-transparent' 
                     : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
                 }`}
               >
@@ -301,7 +306,7 @@ ${noticeMessage || "（特になし）"}
                 onClick={() => setJobType('list_creation')}
                 className={`py-2.5 rounded border-2 text-xs font-black transition-colors ${
                   jobType === 'list_creation' 
-                    ? 'bg-[#0082C8] text-white border-transparent' 
+                    ? 'bg-[#5CA685] text-white border-transparent' 
                     : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
                 }`}
               >
@@ -310,10 +315,10 @@ ${noticeMessage || "（特になし）"}
             </div>
             
             <div className="space-y-1">
-              <label className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8] transition-colors">案件タイトル</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">案件タイトル</label>
               <input 
                 required
-                className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8] transition-colors" 
+                className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685] transition-colors" 
                 placeholder="例：問い合わせフォーム投稿業務（〇〇月度）"
                 value={formData.title}
                 onChange={e => setFormData({...formData, title: e.target.value})}
@@ -324,15 +329,15 @@ ${noticeMessage || "（特になし）"}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">作業件数</label>
-                <input type="number" className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8]" value={formData.count} onChange={e => setFormData({...formData, count: Number(e.target.value)})} />
+                <input type="number" className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" value={formData.count} onChange={e => setFormData({...formData, count: Number(e.target.value)})} />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">募集人数</label>
-                <input type="number" className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8]" value={formData.workerLimit} onChange={e => setFormData({...formData, workerLimit: Number(e.target.value)})} />
+                <input type="number" className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" value={formData.workerLimit} onChange={e => setFormData({...formData, workerLimit: Number(e.target.value)})} />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">優先度</label>
-                <select className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8]" value={formData.urgency} onChange={e => setFormData({...formData, urgency: e.target.value})}>
+                <select className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" value={formData.urgency} onChange={e => setFormData({...formData, urgency: e.target.value})}>
                   <option value="1">通常</option>
                   <option value="2">高め</option>
                   <option value="3">至急</option>
@@ -342,39 +347,40 @@ ${noticeMessage || "（特になし）"}
 
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">期日</label>
-              <input type="date" className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8]" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} />
+              <input type="date" className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} />
             </div>
           </div>
         </section>
 
         {/* 2. 作業詳細セクション */}
         <section className="space-y-2">
-          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#0082C8] pl-2">作業詳細（リンク設定）</h2>
+          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">作業詳細（リンク設定）</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">SCクライアント</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント</label>
               <input 
-                className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8] transition-colors" 
+                className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685] transition-colors" 
                 placeholder="案件に紐づくクライアント名を入力"
                 value={formData.scClient}
                 onChange={e => setFormData({...formData, scClient: e.target.value})} 
               />
             </div>
 
+            {/* 💡【UIアップデート】3つの入力枠を1つの共通コンテナで綺麗にパッケージ化 */}
             {jobType === 'form_posting' ? (
-              <>
+              <div className="space-y-4 pt-1">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">送信文面内容（スプレッドシート等のURL）</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">送信文面内容（スプレッドシート等のURL）</label>
                   <div className="flex gap-2">
                     <input 
                       type="url" 
-                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8] font-mono" 
+                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#5CA685] font-mono" 
                       placeholder="https://docs.google.com/spreadsheets/..." 
                       value={formData.formContent} 
                       onChange={e => setFormData({...formData, formContent: e.target.value})} 
                     />
                     {isValidUrl(formData.formContent) && (
-                      <a href={formData.formContent} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#0082C8] whitespace-nowrap transition-colors">
+                      <a href={formData.formContent} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
                         ↗ リンクを開く
                       </a>
                     )}
@@ -382,37 +388,65 @@ ${noticeMessage || "（特になし）"}
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">入力情報（リスト等のURL）</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力情報（リスト等のURL）</label>
                   <div className="flex gap-2">
                     <input 
                       type="url" 
-                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8]" 
+                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" 
                       placeholder="https://..." 
                       value={formData.inputInfo} 
                       onChange={e => setFormData({...formData, inputInfo: e.target.value})} 
                     />
                     {isValidUrl(formData.inputInfo) && (
-                      <a href={formData.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#0082C8] whitespace-nowrap transition-colors">
+                      <a href={formData.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
                         ↗ リンクを開く
                       </a>
                     )}
                   </div>
                 </div>
-              </>
+
+                {/* 💡【新設】タイトル任意設定 ＋ URLリンク の3つ目の追加入力枠 */}
+                <div className="space-y-1.5 pt-3 border-t border-dashed border-slate-200">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">その他追加リンク（任意設定）</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <input 
+                      type="text" 
+                      className="p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" 
+                      placeholder="リンクの名称（例：手順マニュアル）" 
+                      value={formData.additionalLinkTitle} 
+                      onChange={e => setFormData({...formData, additionalLinkTitle: e.target.value})} 
+                    />
+                    <div className="sm:col-span-2 flex gap-2">
+                      <input 
+                        type="url" 
+                        className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#5CA685] font-mono" 
+                        placeholder="https://..." 
+                        value={formData.additionalLinkUrl} 
+                        onChange={e => setFormData({...formData, additionalLinkUrl: e.target.value})} 
+                      />
+                      {isValidUrl(formData.additionalLinkUrl) && (
+                        <a href={formData.additionalLinkUrl} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
+                          ↗ リンクを開く
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
               <>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">抽出サイトURL</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">抽出サイトURL</label>
                   <div className="flex gap-2">
                     <input 
                       type="url" 
-                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8]" 
+                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" 
                       placeholder="https://example.com" 
                       value={formData.siteUrl} 
                       onChange={e => setFormData({...formData, siteUrl: e.target.value})} 
                     />
                     {isValidUrl(formData.siteUrl) && (
-                      <a href={formData.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#0082C8] whitespace-nowrap transition-colors">
+                      <a href={formData.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
                         ↗ リンクを開く
                       </a>
                     )}
@@ -420,17 +454,17 @@ ${noticeMessage || "（特になし）"}
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">入力項目（指示書等のURL）</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力項目（指示書等のURL）</label>
                   <div className="flex gap-2">
                     <input 
                       type="url" 
-                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#0082C8]" 
+                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" 
                       placeholder="https://..." 
                       value={formData.targetItems} 
                       onChange={e => setFormData({...formData, targetItems: e.target.value})} 
                     />
                     {isValidUrl(formData.targetItems) && (
-                      <a href={formData.targetItems} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#0082C8] whitespace-nowrap transition-colors">
+                      <a href={formData.targetItems} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
                         ↗ リンクを開く
                       </a>
                     )}
@@ -467,7 +501,7 @@ ${noticeMessage || "（特になし）"}
           <div className="bg-white border-2 border-slate-300 rounded p-4 shadow-sm">
             <textarea 
               rows={4} 
-              className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]" 
+              className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#5CA685]" 
               placeholder="社内共有用のメモや、特記事項があれば自由に入力してください（ワーカー側からも閲覧可能です）" 
               value={formData.memo} 
               onChange={e => setFormData({...formData, memo: e.target.value})} 
@@ -498,7 +532,7 @@ ${noticeMessage || "（特になし）"}
               type="button"
               onClick={() => triggerSubmitModal('open')}
               disabled={submitting}
-              className="px-5 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white border border-black/10 rounded text-xs font-bold disabled:opacity-50 transition-colors shadow-sm"
+              className="px-5 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white border border-black/10 rounded text-xs font-bold disabled:opacity-50 transition-colors shadow-sm"
             >
               {submitting ? "処理中..." : existingJobId ? "公開状態で上書き保存" : "案件を公開する"}
             </button>
@@ -511,7 +545,7 @@ ${noticeMessage || "（特になし）"}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
-            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
+            <div className="bg-[#5CA685] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>{modalTitle}</span>
             </div>
             <div className="p-6 bg-white space-y-4">
@@ -525,7 +559,7 @@ ${noticeMessage || "（特になし）"}
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
-                      className="w-4 h-4 rounded border-slate-300 text-[#0082C8] focus:ring-[#0082C8]"
+                      className="w-4 h-4 rounded border-slate-300 text-[#5CA685] focus:ring-[#5CA685]"
                       checked={shouldNotify}
                       onChange={e => setShouldNotify(e.target.checked)}
                     />
@@ -542,7 +576,7 @@ ${noticeMessage || "（特になし）"}
                       </label>
                       <textarea
                         rows={3}
-                        className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#0082C8]"
+                        className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#5CA685]"
                         placeholder="チャットツールの『💭申し送り内容：』の部分に掲載される文章を入力してください。"
                         value={noticeMessage}
                         onChange={e => setNoticeMessage(e.target.value)}
@@ -563,7 +597,7 @@ ${noticeMessage || "（特になし）"}
               <button
                 type="button"
                 onClick={handleModalConfirm}
-                className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                className="px-4 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
               >
                 {modalTargetStatus === 'open' 
                   ? (shouldNotify ? "はい、通知して公開する" : "はい、通知なしで公開する")
