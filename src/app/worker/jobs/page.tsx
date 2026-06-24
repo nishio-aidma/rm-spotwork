@@ -267,7 +267,7 @@ export default function WorkerJobsPage() {
                 </tbody>
               </table>
             </div>
-            {wishJobs.length === 0 && <div className="p-16 text-center text-slate-400 italic text-xs font-medium bg-slate-50">ウィッシュリストに保存されているお仕事はありません。</div>}
+            {wishJobs.length === 0 &&  <div className="p-16 text-center text-slate-400 italic text-xs font-medium bg-slate-50">ウィッシュリストに保存されているお仕事はありません。</div>}
           </div>
         )}
 
