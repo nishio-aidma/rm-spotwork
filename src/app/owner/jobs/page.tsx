@@ -22,7 +22,7 @@ export default function OwnerJobsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [targetJob, setTargetJob] = useState<{ id: string; title: string } | null>(null);
 
-  // 【データ自動一括変換用】管理ステート
+  // 【データ自動補正用】管理ステート
   const [migrateModalOpen, setMigrateModalOpen] = useState(false);
   const [migrateSuccessModalOpen, setMigrateSuccessModalOpen] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
@@ -60,10 +60,7 @@ export default function OwnerJobsPage() {
           currentStatus = "expired";
         }
 
-        // 【重要フラグ】Firebase上に本物のworkersの箱がなく、古い形式で止まっているかを判定
-        const isOldData = !data.workers && !!data.workerId;
-
-        // 【既存データ互換処理】古い1人用データを仮想的に複数人用（workersマップ）へ変換
+        // 既存データ互換処理：古い1人用データを構造変換
         if (data.workerId && !data.workers) {
           data.workers = {
             [data.workerId]: {
@@ -73,7 +70,12 @@ export default function OwnerJobsPage() {
           };
         }
 
-        return { id: d.id, ...data, status: currentStatus, isOldData };
+        // 💡【重要フラグ】1/1名などで満員なのに、全体のstatusが一律openになってしまっている矛盾データを自動検出
+        const currentWorkerCount = data.workers ? Object.keys(data.workers).length : 0;
+        const limit = data.workerLimit || 1;
+        const isMisalignedData = currentStatus === "open" && currentWorkerCount >= limit && currentWorkerCount > 0;
+
+        return { id: d.id, ...data, status: currentStatus, isMisalignedData };
       });
       
       jobList.sort((a: any, b: any) => {
@@ -144,27 +146,25 @@ export default function OwnerJobsPage() {
   const workingCount = allJobs.filter(j => j.status === "assigned" || j.status === "working" || j.status === "paused").length;
   const completedCount = allJobs.filter(j => j.status === "review" || j.status === "completed").length;
 
-  // 【データ自動一括変換】ボタンを押したときの処理
+  // 💡【データ状態の自動補正】間違ってopenになった1人用案件を正しい満員状態へ引き戻す
   const handleMigrateOldJobs = async () => {
     setIsMigrating(true);
     setMigrateModalOpen(false);
     try {
       let count = 0;
-      const oldJobs = allJobs.filter(j => j.isOldData);
+      const misalignedJobs = allJobs.filter(j => j.isMisalignedData);
 
-      for (const oldJob of oldJobs) {
-        const jobRef = doc(db, "jobs", oldJob.id);
+      for (const job of misalignedJobs) {
+        const jobRef = doc(db, "jobs", job.id);
+        
+        // 個別カルテ（workers）の中に記録されているワーカー自身の本来のステータス（pausedなど）を取得
+        const workerUids = Object.keys(job.workers || {});
+        const firstWorkerUid = workerUids[0];
+        const correctWorkerStatus = job.workers[firstWorkerUid]?.status || "assigned";
 
+        // 全体のステータスを一律openから、本来の正しい満員進捗ステータス（pausedなど）へ書き戻す
         await updateDoc(jobRef, {
-          status: "open", 
-          workers: {
-            [oldJob.workerId]: {
-              status: oldJob.status, 
-              totalAccumulatedSeconds: oldJob.totalAccumulatedSeconds || 0,
-              lastStartedAt: oldJob.lastStartedAt || null,
-              workerComment: oldJob.workerComment || ""
-            }
-          }
+          status: correctWorkerStatus
         });
         count++;
       }
@@ -173,8 +173,8 @@ export default function OwnerJobsPage() {
       await fetchOwnerJobs();
       setMigrateSuccessModalOpen(true);
     } catch (e) {
-      console.error("一括データ変換エラー:", e);
-      alert("データの自動変換中にエラーが発生しました。");
+      console.error("データ補正エラー:", e);
+      alert("データの自動補正中にエラーが発生しました。");
     } finally {
       setIsMigrating(false);
     }
@@ -219,7 +219,8 @@ export default function OwnerJobsPage() {
     }
   };
 
-  const oldDataCount = allJobs.filter(j => j.isOldData).length;
+  // 💡 満員なのにopenになっている矛盾データの件数を集計
+  const oldDataCount = allJobs.filter(j => j.isMisalignedData).length;
 
   if (loading) return <OwnerShell title="案件管理"><div className="p-10 text-center text-slate-400 text-xs font-bold">発注台帳を照合中...</div></OwnerShell>;
 
@@ -227,25 +228,25 @@ export default function OwnerJobsPage() {
     <OwnerShell title="案件管理" subTitle="登録案件の公開状況およびステータス確認">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 旧バージョンのデータが存在する場合のみ、画面最上部に出現 */}
+        {/* 💡【データ自動補正バー】矛盾データが存在する場合のみ、画面最上部に出現 */}
         {oldDataCount > 0 && (
-          <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded shadow-sm flex flex-col md:flex-row items-center justify-between gap-3 transition-all">
-            <div className="text-xs font-bold text-amber-950 space-y-1 text-center md:text-left">
+          <div className="bg-rose-50 border-2 border-rose-400 p-4 rounded shadow-sm flex flex-col md:flex-row items-center justify-between gap-3 transition-all">
+            <div className="text-xs font-bold text-rose-950 space-y-1 text-center md:text-left">
               <p className="text-sm font-black flex items-center justify-center md:justify-start gap-1">
-                ⚠️ 旧バージョンの案件データが <span className="text-base text-rose-600 font-black">{oldDataCount}</span> 件検出されました
+                ⚠️ ステータスの不整合データが <span className="text-base text-rose-600 font-black">{oldDataCount}</span> 件検出されました
               </p>
               <p className="text-slate-600 font-medium">
-                この案件は引き受けられているものの、新しい複数人受託システム（定員制）の箱になっていないため一覧の「募集中」に出ていません。
-                下のボタンを押すだけで、進捗や秒数を一切壊さずに、安全に最新のデータ構造へと自動変換します。
+                定員が1名で既に埋まっている古い案件が、一律変換の影響で全体のステータスまで「open（募集中）」になってしまっています。
+                下のボタンを押すだけで、ワーカー個人の作業状態（一時停止など）に合わせて、自動で正しい進捗タブへ一括修正します。
               </p>
             </div>
             <button
               type="button"
               disabled={isMigrating}
               onClick={() => setMigrateModalOpen(true)}
-              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-black px-4 py-2.5 rounded shadow-md border border-black/10 transition-all shrink-0 active:scale-95 disabled:opacity-50"
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-black px-4 py-2.5 rounded shadow-md border border-black/10 transition-all shrink-0 active:scale-95 disabled:opacity-50"
             >
-              {isMigrating ? "データ自動変換を実行中..." : "⚡ データを一発自動変換する"}
+              {isMigrating ? "ステータスを自動補正中..." : "⚡ ステータスを一発自動補正する"}
             </button>
           </div>
         )}
@@ -419,8 +420,9 @@ export default function OwnerJobsPage() {
                            job.status === 'paused' ? '一時停止' : 
                            job.status === 'review' ? '検収待ち' : 
                            job.status === 'completed' ? '完了' : job.status}
-                          {job.isOldData && (
-                            <span className="text-[8px] text-amber-600 block font-bold leading-none mt-0.5">※要変換</span>
+                          {/* 💡 補正対象データであることを示すインジケーター */}
+                          {job.isMisalignedData && (
+                            <span className="text-[8px] text-rose-600 block font-bold leading-none mt-0.5">※要補正</span>
                           )}
                         </span>
                       </td>
@@ -504,19 +506,19 @@ export default function OwnerJobsPage() {
 
       </div>
 
-      {/* 【一括データ自動変換】確認用カスタムモーダル */}
+      {/* 【一括データ自動補正】確認用カスタムモーダル */}
       {migrateModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
-            <div className="bg-amber-600 text-white px-4 py-3 font-black text-xs select-none">
-              <span>⚡ データ構造の全自動アップデート実行確認</span>
+            <div className="bg-rose-600 text-white px-4 py-3 font-black text-xs select-none">
+              <span>⚡ ステータス整合性の自動アップデート実行確認</span>
             </div>
             <div className="p-6 bg-white space-y-3">
               <p className="text-xs font-bold text-slate-700 leading-relaxed">
-                未変換の古い案件データ（計 {oldDataCount} 件）を、新しい複数人受託システム用の形に一発で自動修正します。
+                誤ってopenになってしまっている満員の古い案件データ（計 {oldDataCount} 件）を、正しい進捗状態に自動補正します。
               </p>
               <p className="text-[11px] font-bold text-rose-600 bg-rose-50 p-2.5 rounded border border-rose-200 leading-relaxed">
-                ※ワーカー個人の「作業時間（秒数）」や「一時停止（paused）」などのステータス情報は100%保持されます。データベース全体のstatusのみopenに補正され、一覧の「募集中」へと復活します。
+                ※ワーカー個人の作業時間（秒数）や一時停止（paused）状態は完全に守られます。全体のステータスのみが正しい位置に引き戻され、「請負中」タブへ正しく再配置されます。
               </p>
             </div>
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
@@ -530,16 +532,16 @@ export default function OwnerJobsPage() {
               <button
                 type="button"
                 onClick={handleMigrateOldJobs}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-black text-xs rounded shadow-sm"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded shadow-sm"
               >
-                変換を実行する
+                補正を実行する
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 【一括データ自動変換】完了通知用カスタムモーダル */}
+      {/* 【一括データ自動補正】完了通知用カスタムモーダル */}
       {migrateSuccessModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
@@ -548,10 +550,10 @@ export default function OwnerJobsPage() {
             </div>
             <div className="p-6 bg-white space-y-2">
               <p className="text-xs font-black text-emerald-700">
-                データのクレンジングが完全に成功しました！
+                ステータスの自動クレンジングが完全に成功しました！
               </p>
               <p className="text-[11px] font-medium text-slate-600 leading-relaxed">
-                対象の古い案件（{migratedCount} 件）のデータ構造を、複数人受託システム仕様（全体 status: "open" / 個人 status: "元の状態"）へ安全に書き換えました。自動的に「📢 募集中」のタブに配置されています。
+                対象の1人定員案件（{migratedCount} 件）の全体ステータスを、ワーカー本来の作業状況に合わせて安全に引き戻しました。「📥 請負中」タブの中に正しく再配置されています。
               </p>
             </div>
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end">
