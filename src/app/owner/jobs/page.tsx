@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, query, getDocs, doc, deleteDoc } from "firebase/firestore";
+import { collection, query, getDocs, doc, deleteDoc, updateDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import OwnerShell from "@/components/OwnerShell";
@@ -21,6 +21,12 @@ export default function OwnerJobsPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [targetJob, setTargetJob] = useState<{ id: string; title: string } | null>(null);
+
+  // 【データ自動一括変換用】管理ステート
+  const [migrateModalOpen, setMigrateModalOpen] = useState(false);
+  const [migrateSuccessModalOpen, setMigrateSuccessModalOpen] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migratedCount, setMigratedCount] = useState(0);
 
   const getTodayStr = () => {
     const today = new Date();
@@ -54,7 +60,10 @@ export default function OwnerJobsPage() {
           currentStatus = "expired";
         }
 
-        // 💡【既存データ互換処理】古い1人用データを仮想的に複数人用（workersマップ）へ変換
+        // 【重要フラグ】Firebase上に本物のworkersの箱がなく、古い形式で止まっているかを判定
+        const isOldData = !data.workers && !!data.workerId;
+
+        // 【既存データ互換処理】古い1人用データを仮想的に複数人用（workersマップ）へ変換
         if (data.workerId && !data.workers) {
           data.workers = {
             [data.workerId]: {
@@ -64,7 +73,7 @@ export default function OwnerJobsPage() {
           };
         }
 
-        return { id: d.id, ...data, status: currentStatus };
+        return { id: d.id, ...data, status: currentStatus, isOldData };
       });
       
       jobList.sort((a: any, b: any) => {
@@ -135,6 +144,42 @@ export default function OwnerJobsPage() {
   const workingCount = allJobs.filter(j => j.status === "assigned" || j.status === "working" || j.status === "paused").length;
   const completedCount = allJobs.filter(j => j.status === "review" || j.status === "completed").length;
 
+  // 【データ自動一括変換】ボタンを押したときの処理
+  const handleMigrateOldJobs = async () => {
+    setIsMigrating(true);
+    setMigrateModalOpen(false);
+    try {
+      let count = 0;
+      const oldJobs = allJobs.filter(j => j.isOldData);
+
+      for (const oldJob of oldJobs) {
+        const jobRef = doc(db, "jobs", oldJob.id);
+
+        await updateDoc(jobRef, {
+          status: "open", 
+          workers: {
+            [oldJob.workerId]: {
+              status: oldJob.status, 
+              totalAccumulatedSeconds: oldJob.totalAccumulatedSeconds || 0,
+              lastStartedAt: oldJob.lastStartedAt || null,
+              workerComment: oldJob.workerComment || ""
+            }
+          }
+        });
+        count++;
+      }
+
+      setMigratedCount(count);
+      await fetchOwnerJobs();
+      setMigrateSuccessModalOpen(true);
+    } catch (e) {
+      console.error("一括データ変換エラー:", e);
+      alert("データの自動変換中にエラーが発生しました。");
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
   const triggerDeleteModal = (jobId: string, title: string) => {
     setTargetJob({ id: jobId, title });
     setModalOpen(true);
@@ -174,12 +219,37 @@ export default function OwnerJobsPage() {
     }
   };
 
+  const oldDataCount = allJobs.filter(j => j.isOldData).length;
+
   if (loading) return <OwnerShell title="案件管理"><div className="p-10 text-center text-slate-400 text-xs font-bold">発注台帳を照合中...</div></OwnerShell>;
 
   return (
     <OwnerShell title="案件管理" subTitle="登録案件の公開状況およびステータス確認">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
+        {/* 旧バージョンのデータが存在する場合のみ、画面最上部に出現 */}
+        {oldDataCount > 0 && (
+          <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded shadow-sm flex flex-col md:flex-row items-center justify-between gap-3 transition-all">
+            <div className="text-xs font-bold text-amber-950 space-y-1 text-center md:text-left">
+              <p className="text-sm font-black flex items-center justify-center md:justify-start gap-1">
+                ⚠️ 旧バージョンの案件データが <span className="text-base text-rose-600 font-black">{oldDataCount}</span> 件検出されました
+              </p>
+              <p className="text-slate-600 font-medium">
+                この案件は引き受けられているものの、新しい複数人受託システム（定員制）の箱になっていないため一覧の「募集中」に出ていません。
+                下のボタンを押すだけで、進捗や秒数を一切壊さずに、安全に最新のデータ構造へと自動変換します。
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={isMigrating}
+              onClick={() => setMigrateModalOpen(true)}
+              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-black px-4 py-2.5 rounded shadow-md border border-black/10 transition-all shrink-0 active:scale-95 disabled:opacity-50"
+            >
+              {isMigrating ? "データ自動変換を実行中..." : "⚡ データを一発自動変換する"}
+            </button>
+          </div>
+        )}
+
         {/* 上部コントロールバー ＆ 絞り込みコンソール */}
         <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div className="flex items-center gap-4 flex-wrap text-xs">
@@ -310,7 +380,6 @@ export default function OwnerJobsPage() {
                   <th className="p-3 border-r border-slate-300 w-24">ステータス</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
                   <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
-                  {/* 💡【複数人対応】列タイトルを「担当スタッフ」から「受託状況」へ変更 */}
                   <th className="p-3 border-r border-slate-300 w-28 text-center">受託状況</th>
                   <th className="p-3 border-r border-slate-300">案件タイトル</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-right">件数</th>
@@ -324,7 +393,6 @@ export default function OwnerJobsPage() {
                 {filteredJobs.map((job) => {
                   const isUrgentDeadline = isThisWeekDeadline(job.deadline);
                   
-                  // 💡【定員計算】受託している人数と定員を取得
                   const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
                   const limit = job.workerLimit || 1;
                   const isFull = currentWorkerCount >= limit;
@@ -351,6 +419,9 @@ export default function OwnerJobsPage() {
                            job.status === 'paused' ? '一時停止' : 
                            job.status === 'review' ? '検収待ち' : 
                            job.status === 'completed' ? '完了' : job.status}
+                          {job.isOldData && (
+                            <span className="text-[8px] text-amber-600 block font-bold leading-none mt-0.5">※要変換</span>
+                          )}
                         </span>
                       </td>
 
@@ -370,7 +441,6 @@ export default function OwnerJobsPage() {
                         </span>
                       </td>
 
-                      {/* 💡【複数人対応表示】定員メーター */}
                       <td className="p-3 border-r border-slate-200 text-center font-bold text-slate-700">
                         {job.status === "draft" || job.status === "expired" ? (
                           <span className="text-slate-300 font-normal">-</span>
@@ -433,6 +503,69 @@ export default function OwnerJobsPage() {
         </div>
 
       </div>
+
+      {/* 【一括データ自動変換】確認用カスタムモーダル */}
+      {migrateModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            <div className="bg-amber-600 text-white px-4 py-3 font-black text-xs select-none">
+              <span>⚡ データ構造の全自動アップデート実行確認</span>
+            </div>
+            <div className="p-6 bg-white space-y-3">
+              <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                未変換の古い案件データ（計 {oldDataCount} 件）を、新しい複数人受託システム用の形に一発で自動修正します。
+              </p>
+              <p className="text-[11px] font-bold text-rose-600 bg-rose-50 p-2.5 rounded border border-rose-200 leading-relaxed">
+                ※ワーカー個人の「作業時間（秒数）」や「一時停止（paused）」などのステータス情報は100%保持されます。データベース全体のstatusのみopenに補正され、一覧の「募集中」へと復活します。
+              </p>
+            </div>
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
+              <button
+                type="button"
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded"
+                onClick={() => setMigrateModalOpen(false)}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleMigrateOldJobs}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-black text-xs rounded shadow-sm"
+              >
+                変換を実行する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 【一括データ自動変換】完了通知用カスタムモーダル */}
+      {migrateSuccessModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            <div className="bg-emerald-600 text-white px-4 py-3 font-black text-xs select-none">
+              <span>✨ アップデート処理完了</span>
+            </div>
+            <div className="p-6 bg-white space-y-2">
+              <p className="text-xs font-black text-emerald-700">
+                データのクレンジングが完全に成功しました！
+              </p>
+              <p className="text-[11px] font-medium text-slate-600 leading-relaxed">
+                対象の古い案件（{migratedCount} 件）のデータ構造を、複数人受託システム仕様（全体 status: "open" / 個人 status: "元の状態"）へ安全に書き換えました。自動的に「📢 募集中」のタブに配置されています。
+              </p>
+            </div>
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setMigrateSuccessModalOpen(false)}
+                className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded shadow-sm"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* カスタム確認ポップアップ */}
       {modalOpen && (
