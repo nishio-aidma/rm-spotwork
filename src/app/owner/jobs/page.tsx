@@ -54,6 +54,16 @@ export default function OwnerJobsPage() {
           currentStatus = "expired";
         }
 
+        // 💡【既存データ互換処理】古い1人用データを仮想的に複数人用（workersマップ）へ変換
+        if (data.workerId && !data.workers) {
+          data.workers = {
+            [data.workerId]: {
+              status: currentStatus,
+              totalAccumulatedSeconds: data.totalAccumulatedSeconds || 0
+            }
+          };
+        }
+
         return { id: d.id, ...data, status: currentStatus };
       });
       
@@ -300,7 +310,8 @@ export default function OwnerJobsPage() {
                   <th className="p-3 border-r border-slate-300 w-24">ステータス</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
                   <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
-                  <th className="p-3 border-r border-slate-300 w-28">担当スタッフ</th>
+                  {/* 💡【複数人対応】列タイトルを「担当スタッフ」から「受託状況」へ変更 */}
+                  <th className="p-3 border-r border-slate-300 w-28 text-center">受託状況</th>
                   <th className="p-3 border-r border-slate-300">案件タイトル</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-right">件数</th>
                   <th className="p-3 border-r border-slate-300 w-28 text-center">期日</th>
@@ -312,6 +323,11 @@ export default function OwnerJobsPage() {
               <tbody className="divide-y divide-slate-200 font-medium text-slate-800">
                 {filteredJobs.map((job) => {
                   const isUrgentDeadline = isThisWeekDeadline(job.deadline);
+                  
+                  // 💡【定員計算】受託している人数と定員を取得
+                  const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
+                  const limit = job.workerLimit || 1;
+                  const isFull = currentWorkerCount >= limit;
 
                   return (
                     <tr key={job.id} className="hover:bg-slate-50 transition-colors">
@@ -354,11 +370,14 @@ export default function OwnerJobsPage() {
                         </span>
                       </td>
 
-                      <td className="p-3 border-r border-slate-200 font-bold text-slate-700 truncate" title={job.workerId ? (userMap[job.workerId] || "不明のスタッフ") : "-"}>
-                        {job.workerId ? (
-                          userMap[job.workerId] || "不明のスタッフ"
+                      {/* 💡【複数人対応表示】定員メーター */}
+                      <td className="p-3 border-r border-slate-200 text-center font-bold text-slate-700">
+                        {job.status === "draft" || job.status === "expired" ? (
+                          <span className="text-slate-300 font-normal">-</span>
                         ) : (
-                          <span className="text-slate-300 font-normal select-none">-</span>
+                          <span className={`font-mono text-[11px] ${isFull ? 'text-[#0082C8] bg-blue-50 px-1.5 py-0.5 rounded' : 'text-slate-500'}`}>
+                            {currentWorkerCount} / {limit} 名
+                          </span>
                         )}
                       </td>
 

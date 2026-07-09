@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import OwnerShell from "@/components/OwnerShell";
@@ -18,6 +18,9 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   const [job, setJob] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // 💡【新設】ワーカーのID（文字列）から実際の「名前」を表示するための辞書（マップ）
+  const [workerNames, setWorkerNames] = useState<{ [key: string]: string }>({});
 
   // シンプルモダン確認ポップアップ用の管理ステート
   const [modalOpen, setModalOpen] = useState(false);
@@ -36,16 +39,47 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         const docRef = doc(db, "jobs", id);
         const snap = await getDoc(docRef);
         if (snap.exists()) {
-          setJob({ id: snap.id, ...snap.data() });
+          const data = snap.data();
+          
+          // 💡【既存データ互換処理】ワーカー側と同様に、古い1人用データを仮想的に複数人用（workersマップ）へ変換
+          let processedJob = { id: snap.id, ...data } as any;
+          if (data.workerId && !data.workers) {
+            processedJob.workers = {
+              [data.workerId]: {
+                status: data.status || "assigned",
+                totalAccumulatedSeconds: data.totalAccumulatedSeconds || 0,
+                workerComment: data.workerComment || ""
+              }
+            };
+          }
+          setJob(processedJob);
+
+          // 💡【複数人対応】受託している全ワーカーの「名前」をデータベースから一括取得する処理
+          if (processedJob.workers) {
+            const uids = Object.keys(processedJob.workers);
+            if (uids.length > 0) {
+              const namesMap: { [key: string]: string } = {};
+              await Promise.all(uids.map(async (uid) => {
+                const uSnap = await getDoc(doc(db, "users", uid));
+                if (uSnap.exists()) {
+                  const uData = uSnap.data();
+                  namesMap[uid] = `${uData.lastName || ""} ${uData.firstName || uData.name || "不明"}`.trim();
+                } else {
+                  namesMap[uid] = "退会済みユーザー";
+                }
+              }));
+              setWorkerNames(namesMap);
+            }
+          }
         }
       } catch (error) {
         console.error(error);
       } finally {
-        loading && setLoading(false);
+        setLoading(false);
       }
     }
     if (!authLoading) fetchJob();
-  }, [id, user, authLoading, loading]);
+  }, [id, user, authLoading]);
 
   // 時間テキスト変換
   const formatTime = (s: number) => {
@@ -70,7 +104,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     const roomId = process.env.NEXT_PUBLIC_MEMBERS_ROOM_ID;
 
     if (!token || !roomId) {
-      console.warn("MEMBERSの通知設定（環境変数）が見つからないため、通知をスキップしました。");
+      console.warn("MEMBERSの通知設定が見つからないため、通知をスキップしました。");
       return;
     }
 
@@ -140,12 +174,28 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       } 
       
       else if (action === "approve") {
-        await updateDoc(jobRef, {
+        // 💡【一括承認】案件全体を完了にしつつ、参加している各ワーカーの個別ステータスも一斉にcompletedにする
+        const updates: any = {
           status: "completed",
           approvedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
+        };
+        if (job.workers) {
+          Object.keys(job.workers).forEach(uid => {
+            updates[`workers.${uid}.status`] = "completed";
+          });
+        }
+        await updateDoc(jobRef, updates);
+        
+        setJob((prev: any) => {
+          const newJob = { ...prev, status: "completed" };
+          if (newJob.workers) {
+            Object.keys(newJob.workers).forEach(uid => {
+              newJob.workers[uid].status = "completed";
+            });
+          }
+          return newJob;
         });
-        setJob((prev: any) => ({ ...prev, status: "completed" }));
       }
 
       else if (action === "publish") {
@@ -163,11 +213,27 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       }
 
       else if (action === "reject") {
-        await updateDoc(jobRef, {
+        // 💡【一括差し戻し】案件全体を差し戻しつつ、各ワーカーの個別ステータスも一斉にassigned（準備中）に戻す
+        const updates: any = {
           status: "assigned",
           updatedAt: serverTimestamp()
+        };
+        if (job.workers) {
+          Object.keys(job.workers).forEach(uid => {
+            updates[`workers.${uid}.status`] = "assigned";
+          });
+        }
+        await updateDoc(jobRef, updates);
+
+        setJob((prev: any) => {
+          const newJob = { ...prev, status: "assigned" };
+          if (newJob.workers) {
+            Object.keys(newJob.workers).forEach(uid => {
+              newJob.workers[uid].status = "assigned";
+            });
+          }
+          return newJob;
         });
-        setJob((prev: any) => ({ ...prev, status: "assigned" }));
       }
     } catch (e) {
       console.error(e);
@@ -191,8 +257,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         targetItems: job.targetItems || "",
         formContent: job.formContent || "",
         siteUrl: job.siteUrl || "",
-        additionalLinkTitle: job.additionalLinkTitle || "", // 💡 新設カスタム項目を安全に引き継ぎ
-        additionalLinkUrl: job.additionalLinkUrl || "",     // 💡 新設カスタム項目を安全に引き継ぎ
+        additionalLinkTitle: job.additionalLinkTitle || "",
+        additionalLinkUrl: job.additionalLinkUrl || "", 
         procedures: Array.isArray(job.procedures) ? job.procedures : ["", "", ""],
         memo: job.memo || "" ,
         existingJobId: isEditMode ? job.id : null
@@ -208,8 +274,16 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   if (authLoading || loading) return <OwnerShell title="読み込み中..."><div className="p-10 text-center text-slate-400 text-xs font-bold">案件情報を照会中...</div></OwnerShell>;
   if (!job) return <OwnerShell title="エラー"><div className="p-10 text-center text-rose-600 font-bold text-xs">指定された案件が見つかりませんでした。</div></OwnerShell>;
 
+  // 💡【合計計算】参加しているワーカー全員の総稼働時間を計算
+  const totalAllWorkersSeconds = job.workers 
+    ? Object.values(job.workers).reduce((acc: number, w: any) => acc + (w.totalAccumulatedSeconds || 0), 0)
+    : (job.totalAccumulatedSeconds || 0);
+
+  const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
+  const workerLimit = job.workerLimit || 1;
+
   return (
-    <OwnerShell title="案件詳細・管理デスク" subTitle="発注内容 of Confirm とワーカー稼働の監視">
+    <OwnerShell title="案件詳細・管理デスク" subTitle="発注内容の確認とワーカー稼働の監視">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 max-w-full mx-auto pb-32 text-slate-900 font-sans antialiased">
         
         {/* 左側：メイン情報明細 */}
@@ -256,7 +330,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 bg-white border-2 border-slate-300 rounded overflow-hidden divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-300 shadow-sm">
-            
             {/* SCクライアント名 */}
             <div className="p-3 flex flex-col justify-between min-h-[64px] relative group">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント名</span>
@@ -282,7 +355,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               </div>
             </div>
             
-            {/* 💡 リンク表示を下に集約したため、上部グリッドはサマリーへスマート化 */}
             <div className="p-3 flex flex-col justify-between min-h-[64px]">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">関連リンク</span>
               <div className="mt-1 flex items-center justify-between">
@@ -296,7 +368,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           </div>
 
-          {/* 💡【UI大規模パッケージ調整】3つの枠をセットで美しく並べ、URLテキストを隠した洗練されたリンク集 */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
             <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
               🔗 作業詳細（各種リンク設定）
@@ -304,7 +375,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
               {job.jobType === "form_posting" ? (
                 <>
-                  {/* 1. 送信文面内容 */}
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">📄 送信文面内容</span>
                     {job.formContent ? (
@@ -313,8 +383,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                       </a>
                     ) : <span className="text-slate-300 font-normal">未登録</span>}
                   </div>
-
-                  {/* 2. 入力情報 */}
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">📋 入力情報リスト</span>
                     {job.inputInfo ? (
@@ -323,8 +391,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                       </a>
                     ) : <span className="text-slate-300 font-normal">未登録</span>}
                   </div>
-
-                  {/* 3. 新設された3つ目の追加入力枠リンク */}
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600 truncate max-w-[130px]">
                       🔗 {job.additionalLinkTitle || "その他追加リンク"}
@@ -338,7 +404,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 </>
               ) : (
                 <>
-                  {/* リスト作成のケース */}
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">🌐 抽出ターゲットサイト</span>
                     {job.siteUrl ? (
@@ -385,23 +450,61 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           )}
 
-          {/* ワーカーから提出されたリアルタイム報告コメント表示ボード */}
+          {/* 💡【新設】参加ワーカーごとの個別カルテ（進捗・稼働時間・メモ）一覧表示ボード */}
           {job.status !== "open" && job.status !== "draft" && (
-            <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-2 shadow-sm">
-              <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
-                📥 ワーカーからの報告コメント・作業メモ
-              </h2>
-              {job.workerComment && job.workerComment.trim() !== "" ? (
-                <div className="bg-emerald-50/40 border border-emerald-200 rounded p-3 text-xs text-slate-800 font-bold whitespace-pre-wrap leading-relaxed shadow-xs">
-                  {job.workerComment}
-                </div>
-              ) : (
-                <div className="bg-slate-50 border border-slate-200 rounded p-3 text-xs text-slate-400 font-medium italic">
-                  ワーカーからのテキスト報告（一時保存・完了メモ）は現在ありません。
-                </div>
-              )}
+            <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
+              <div className="flex justify-between items-center border-l-2 border-[#5CA685] pl-2">
+                <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                  👥 参加ワーカーの稼働状況と報告メモ（{currentWorkerCount}名）
+                </h2>
+              </div>
+              
+              <div className="space-y-3">
+                {job.workers && Object.keys(job.workers).length > 0 ? (
+                  Object.keys(job.workers).map(uid => {
+                    const wData = job.workers[uid];
+                    return (
+                      <div key={uid} className="border border-slate-200 rounded overflow-hidden">
+                        <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-slate-800">{workerNames[uid] || "読み込み中..."}</span>
+                            <span className={`px-1.5 py-0.5 text-[9px] font-black rounded ${
+                              wData.status === 'working' ? 'bg-rose-50 text-rose-600 border border-rose-200 animate-pulse' :
+                              wData.status === 'review' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                              wData.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                              'bg-slate-200 text-slate-600 border border-slate-300'
+                            }`}>
+                              {wData.status === 'working' ? '稼働中' : 
+                               wData.status === 'paused' ? '一時停止' : 
+                               wData.status === 'review' ? '完了報告済' : 
+                               wData.status === 'completed' ? '検収完了' : '準備中'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono font-black text-[#5CA685] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                            ⏱️ {formatTime(wData.totalAccumulatedSeconds || 0)}
+                          </span>
+                        </div>
+                        <div className="p-3 bg-white">
+                          {wData.workerComment ? (
+                            <div className="text-xs text-slate-700 font-medium whitespace-pre-wrap leading-relaxed">
+                              {wData.workerComment}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-slate-400 italic">メモの記録はまだありません</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200 rounded p-4 text-center text-xs text-slate-400 font-medium italic">
+                    ワーカーの情報が見つかりません。
+                  </div>
+                )}
+              </div>
             </div>
           )}
+
         </div>
 
         {/* 右側：コントロールサイドインフラ */}
@@ -413,6 +516,14 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
 
             <div className="p-4 space-y-4">
+              
+              <div className="bg-slate-100 border border-slate-300 p-2.5 rounded text-[11px] font-bold text-slate-600 flex justify-between items-center select-none">
+                <span>👥 現在の受託枠:</span>
+                <span className="font-mono text-xs font-black text-[#5CA685]">
+                  {currentWorkerCount} / {workerLimit} 名
+                </span>
+              </div>
+
               <div className="bg-slate-50 border-2 border-slate-200 p-3 rounded text-center">
                 <div className="text-xs font-black text-slate-800">
                   {job.status === 'open' ? '🔓 募集中（ワーカー未定）' : 
@@ -420,15 +531,16 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                    job.status === 'assigned' ? '📥 受諾済み（作業準備中）' : 
                    job.status === 'working' ? '🔴 ワーカー作業中（タイマー稼働）' : 
                    job.status === 'paused' ? '⏸️ 一時中断中' : 
-                   job.status === 'review' ? '⌛ 検収待ち（報告提出済み）' : 
+                   job.status === 'review' ? '⌛ 検収待ち（全員報告済）' : 
                    job.status === 'completed' ? '🏁 検収完了（取引終了）' : job.status}
                 </div>
               </div>
 
+              {/* 💡 参加者全員の合計時間を計算して表示 */}
               <div className="p-3.5 bg-emerald-50/40 border border-emerald-200 text-slate-900 rounded font-sans shadow-inner space-y-1">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">TOTAL TIME / 累積稼働実績</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">TOTAL TIME / 全員の合計稼働実績</span>
                 <p className="text-xl font-black text-[#5CA685] tracking-tight font-mono tabular-nums">
-                  {formatTime(job.totalAccumulatedSeconds || 0)}
+                  {formatTime(totalAllWorkersSeconds)}
                 </p>
               </div>
 
@@ -472,7 +584,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                       disabled={submitting}
                       className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded border border-black/10 shadow-sm transition-colors"
                     >
-                      ↩ 案件をワーカーに差し戻す
+                      ↩ 案件を全員に差し戻す
                     </button>
                   </div>
                 )}
@@ -521,8 +633,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   : modalType === "draft"
                   ? "この案件の受諾募集を一度ストップし、非公開の『下書き状態』に戻しますか？\n\n戻すと、ワーカー側の案件を探す画面から一時的に表示が消えます。"
                   : modalType === "reject"
-                  ? "提出された報告を差し戻し、ワーカーのステータスを『受諾済み（作業準備中）』に戻しますか？\n\n戻すことで、ワーカーがもう一度タイマーを起動して業務の再開と再提出を行えるようになります。"
-                  : "この案件の作業内容および稼働時間を承認（検収完了）しますか？\n\n確定するとステータスが『完了』となり、ワーカー実績として確定します。"
+                  ? "提出された報告を差し戻し、参加ワーカー全員のステータスを『準備中』に戻しますか？\n\n戻すことで、ワーカーがもう一度タイマーを起動して業務の再開と再提出を行えるようになります。"
+                  : "この案件の作業内容および参加ワーカー全員の稼働時間を承認（検収完了）しますか？\n\n確定するとステータスが『完了』となり、ワーカー実績として確定します。"
                 }
               </p>
 

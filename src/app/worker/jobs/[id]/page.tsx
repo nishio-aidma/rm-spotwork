@@ -30,7 +30,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
   const [modalMessage, setModalMessage] = useState("");
-  // 💡 save_success（保存完了通知モード）を識別子に追加
   const [modalActionType, setModalActionType] = useState<"accept" | "start" | "pause" | "complete" | "save_success" | null>(null);
 
   // コピー完了通知用のポップステート
@@ -48,8 +47,28 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           const snap = await getDoc(docRef);
           if (snap.exists()) {
             const data = snap.data() as any;
-            setJob({ id: snap.id, ...data });
-            setWorkerComment(data.workerComment || "");
+            
+            // 💡【過去データの救済処置】もし過去に作られた「古い1人専用の案件」だった場合、
+            // 画面のメモリ上で自動的に複数人用のデータ構造に形を変換して、システムが壊れるのを防ぎます。
+            let processedJob = { id: snap.id, ...data };
+            if (data.workerId && !data.workers) {
+              processedJob.workers = {
+                [data.workerId]: {
+                  status: data.status || "assigned",
+                  totalAccumulatedSeconds: data.totalAccumulatedSeconds || 0,
+                  lastStartedAt: data.lastStartedAt || null,
+                  workerComment: data.workerComment || "",
+                  submittedAt: data.submittedAt || null
+                }
+              };
+            }
+            
+            setJob(processedJob);
+            
+            // ログインしている「あなた（自分自身）」専用の枠から、保存済みのメモを復元します
+            if (processedJob.workers?.[user.uid]) {
+              setWorkerComment(processedJob.workers[user.uid].workerComment || "");
+            }
           }
 
           const wishSnap = await getDoc(doc(db, "wishlists", `${user.uid}_${id}`));
@@ -115,19 +134,30 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     }
   };
 
-  // テキストエリアの内容を「いつでも一時保存」できる関数
+  // テキストエリアの内容をワーカー個別のカルテ領域へ一時保存する関数
   const handleSaveComment = async () => {
     if (!job || !currentUser) return;
     setIsSavingComment(true);
     try {
       const jobRef = doc(db, "jobs", job.id);
+      
+      // 💡 案件の全体メモではなく、自分専用のカルテ（workers > 自分のID > workerComment）を狙い撃ちで保存します
       await updateDoc(jobRef, {
-        workerComment: workerComment,
+        [`workers.${currentUser.uid}.workerComment`]: workerComment,
         updatedAt: serverTimestamp()
       });
-      setJob((prev: any) => ({ ...prev, workerComment: workerComment }));
+
+      setJob((prev: any) => ({
+        ...prev,
+        workers: {
+          ...prev.workers,
+          [currentUser.uid]: {
+            ...prev.workers?.[currentUser.uid],
+            workerComment: workerComment
+          }
+        }
+      }));
       
-      // 💡 ブラウザ標準の alert を完全破壊し、自作のシンプルリッチモーダルを起動！
       triggerModal("save_success");
     } catch (e) {
       console.error("コメントの一時保存に失敗しました:", e);
@@ -142,20 +172,20 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     setModalActionType(type);
     if (type === "accept") {
       setModalTitle("📥 案件を引き受ける");
-      setModalMessage("この案件の担当として登録しますか？\n確定すると『進行中のタスク』に移動し、いつでも作業を開始できるようになります。");
+      setModalMessage("この案件の担当メンバーとして登録しますか？\n確定すると『進行中のタスク』に移動し、いつでも作業を開始できるようになります。");
     } else if (type === "start") {
       setModalTitle("⏱️ 作業を開始する");
-      setModalMessage("これより作業を開始します。よろしいですか？\n※現在の時刻が『開始時刻』として記録されます。");
+      setModalMessage("これより作業を開始します。よろしいですか？\n※あなた個人の『開始時刻』が個別に記録・集計されます。");
     } else if (type === "pause") {
       setModalTitle("⏸️ 作業を一時中断する");
-      setModalMessage("休憩や中断のため、タイマーを停止しますか？\n※ここまでの稼働時間が集計され、実績に合算保存されます。");
+      setModalMessage("休憩や中断のため、タイマーを停止しますか？\n※あなた個人のこれまでの稼働時間が集計され、実績に合算保存されます。");
     } else if (type === "complete") {
       setModalTitle("🏁 完了報告を提出する");
-      setModalMessage("本日の作業をすべて終了し、オーナーへ提出しますか？\n\n※現在最下部のメモ欄に入力されているコメントが、そのまま最終実績として提出されます。");
+      setModalMessage("本日の作業をすべて終了し、オーナーへ提出しますか？\n\n※あなた以外の受託メンバーが全員完了報告を出し終えた時点で、案件全体が自動的に『検収待ち』状態へと移行します。");
     }
     else if (type === "save_success") {
       setModalTitle("✨ メモ一時保存完了");
-      setModalMessage("報告コメント・作業メモをクラウドデータベースへ安全に一時保存しました！\n\nこの内容はいつでも書き換え可能で、右側の『作業を完了する』ボタンを押した際に最終実績としてオーナーへ自動提出されます。");
+      setModalMessage("報告コメント・作業メモをあなた専用のデータ枠へ安全に一時保存しました！\n\nこの内容はいつでも書き換え可能で、『作業を完了する』ボタンを押した際に最終実績としてオーナーへ自動提出されます。");
     }
     setModalOpen(true);
   };
@@ -170,10 +200,38 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       const jobRef = doc(db, "jobs", job.id);
       const now = new Date();
 
+      // 自分自身の個別カルテデータを抽出（まだ無ければ初期枠を作成）
+      const myData = job.workers?.[currentUser.uid] || {
+        status: "assigned",
+        totalAccumulatedSeconds: 0,
+        lastStartedAt: null,
+        workerComment: "",
+        submittedAt: null
+      };
+
       if (modalActionType === "accept") {
+        // 💡【定員チェック】現在すでに受託している人数を正確にカウント
+        const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
+        const limit = job.workerLimit || 1;
+
+        if (currentWorkerCount >= limit) {
+          alert("申し訳ありません。この案件はすでに募集定員（上限人数）に達したため受諾できません。");
+          setSubmitting(false);
+          return;
+        }
+
+        // 💡 自分の個別カルテを新しく追加してアップデート
         await updateDoc(jobRef, {
-          workerId: currentUser.uid, 
-          status: "assigned",
+          [`workers.${currentUser.uid}`]: {
+            status: "assigned",
+            totalAccumulatedSeconds: 0,
+            lastStartedAt: null,
+            workerComment: "",
+            assignedAt: new Date()
+          },
+          // 一覧画面での表示崩れを防ぐための安全弁として、1人目のワーカーIDをルートにも残す
+          workerId: job.workerId || currentUser.uid,
+          status: "assigned", 
           updatedAt: serverTimestamp()
         });
         const snap = await getDoc(jobRef);
@@ -182,8 +240,9 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       
       else if (modalActionType === "start") {
         await updateDoc(jobRef, {
-          status: "working",
-          lastStartedAt: serverTimestamp(),
+          [`workers.${currentUser.uid}.status`]: "working",
+          [`workers.${currentUser.uid}.lastStartedAt`]: serverTimestamp(),
+          status: "working", // 誰か1人でも動いていれば案件全体を「進行中」にする
           updatedAt: serverTimestamp()
         });
         const snap = await getDoc(jobRef);
@@ -191,22 +250,23 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       } 
       
       else if (modalActionType === "pause") {
-        const baseSeconds = job.totalAccumulatedSeconds || 0;
+        const baseSeconds = myData.totalAccumulatedSeconds || 0;
         let finalSeconds = baseSeconds;
         let sessionSeconds = 0;
 
-        if (job.lastStartedAt) {
-          const startedTime = job.lastStartedAt.toDate 
-            ? job.lastStartedAt.toDate().getTime() 
-            : new Date(job.lastStartedAt).getTime();
+        if (myData.lastStartedAt) {
+          const startedTime = myData.lastStartedAt.toDate 
+            ? myData.lastStartedAt.toDate().getTime() 
+            : new Date(myData.lastStartedAt).getTime();
           
           sessionSeconds = Math.floor((now.getTime() - startedTime) / 1000);
           finalSeconds = Math.max(baseSeconds, baseSeconds + sessionSeconds);
         }
 
         await updateDoc(jobRef, {
-          status: "paused",
-          totalAccumulatedSeconds: finalSeconds,
+          [`workers.${currentUser.uid}.status`]: "paused",
+          [`workers.${currentUser.uid}.totalAccumulatedSeconds`]: finalSeconds,
+          status: "paused", 
           updatedAt: serverTimestamp()
         });
 
@@ -225,26 +285,47 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       } 
       
       else if (modalActionType === "complete") {
-        const baseSeconds = job.totalAccumulatedSeconds || 0;
+        const baseSeconds = myData.totalAccumulatedSeconds || 0;
         let finalSeconds = baseSeconds;
         let sessionSeconds = 0;
 
-        if (job.lastStartedAt) {
-          const startedTime = job.lastStartedAt.toDate 
-            ? job.lastStartedAt.toDate().getTime() 
-            : new Date(job.lastStartedAt).getTime();
+        if (myData.lastStartedAt) {
+          const startedTime = myData.lastStartedAt.toDate 
+            ? myData.lastStartedAt.toDate().getTime() 
+            : new Date(myData.lastStartedAt).getTime();
           
           sessionSeconds = Math.floor((now.getTime() - startedTime) / 1000);
           finalSeconds = Math.max(baseSeconds, baseSeconds + sessionSeconds);
         }
 
-        await updateDoc(jobRef, {
-          status: "review",
-          totalAccumulatedSeconds: finalSeconds,
-          workerComment: workerComment, 
-          submittedAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+        // 💡【全員完了の判定ロジック】自分以外のメンバーがすでに全員完了報告を出しているか調べる
+        const allWorkersUids = Object.keys(job.workers || {});
+        const otherWorkersUids = allWorkersUids.filter(uid => uid !== currentUser.uid);
+        
+        const isAllOthersFinished = otherWorkersUids.every(uid => {
+          const status = job.workers[uid]?.status;
+          return status === "review" || status === "completed";
         });
+
+        // 自分以外に誰もいない、または他の人が全員終わっていれば「全体をreview（検収待ち）」にし、残っていれば「working（進行中）」をキープする
+        const finalJobStatus = (otherWorkersUids.length === 0 || isAllOthersFinished) ? "review" : "working";
+
+        const updateData: any = {
+          [`workers.${currentUser.uid}.status`]: "review",
+          [`workers.${currentUser.uid}.totalAccumulatedSeconds`]: finalSeconds,
+          [`workers.${currentUser.uid}.workerComment`]: workerComment, 
+          [`workers.${currentUser.uid}.submittedAt`]: serverTimestamp(),
+          status: finalJobStatus, 
+          updatedAt: serverTimestamp()
+        };
+
+        // 最後の1人が出し終えて全体が検収待ちになるときは、互換性のためにルート階層にもデータを残す
+        if (finalJobStatus === "review") {
+          updateData.submittedAt = serverTimestamp();
+          updateData.workerComment = workerComment; 
+        }
+
+        await updateDoc(jobRef, updateData);
 
         if (sessionSeconds > 0) {
           await addDoc(collection(db, "workLogs"), {
@@ -270,11 +351,20 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   if (loading) return <WorkerShell title="読み込み中"><div className="p-10 text-center text-slate-400 text-xs font-bold">データを取得中...</div></WorkerShell>;
   if (!job) return <WorkerShell title="エラー"><div className="p-10 text-center text-rose-600 font-bold text-xs">案件が見つかりませんでした。</div></WorkerShell>;
 
-  const isMyJob = job.workerId === currentUser?.uid;
+  // 💡【複数人判定】自分がこの案件の参加ワーカーリストに含まれているかどうか
+  const isMyJob = job.workers && Object.keys(job.workers).includes(currentUser?.uid);
+
+  // 💡 自分の進行状況ステータスをピンポイントで特定
+  const myJobData = job.workers?.[currentUser?.uid];
+  const myStatus = myJobData?.status || "open";
 
   // 動的戻り先シチュエーション判定
-  const backUrl = (isMyJob && job.status !== "open") ? "/worker/my-jobs" : "/worker/jobs";
-  const backText = (isMyJob && job.status !== "open") ? "🔙 進行中のタスク一覧に戻る" : "🔙 案件を探す（一覧）に戻る";
+  const backUrl = (isMyJob && myStatus !== "open") ? "/worker/my-jobs" : "/worker/jobs";
+  const backText = (isMyJob && myStatus !== "open") ? "🔙 進行中のタスク一覧に戻る" : "🔙 案件を探す（一覧）に戻る";
+
+  // 現在の合計受託人数と定員の計算
+  const currentAssignedCount = job.workers ? Object.keys(job.workers).length : 0;
+  const workerLimit = job.workerLimit || 1;
 
   return (
     <WorkerShell title="案件詳細" subTitle="業務内容の確認と打刻">
@@ -356,7 +446,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               </div>
             </div>
 
-            {/* 💡【デザイン統一】URLを非表示にして下のリンクパッケージセクションへ集約 */}
             <div className="p-3 flex flex-col justify-between min-h-[72px]">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">関連リンク</span>
               <div className="mt-auto flex justify-between items-center">
@@ -370,7 +459,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </div>
           </div>
 
-          {/* 💡【UI大規模パッケージ調整】3つの枠をセットで美しく並べ、URLテキストを隠したワーカー向け洗練リンク集 */}
+          {/* 業務詳細リンク集パッケージ */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
             <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
               🔗 業務詳細（各種リンク設定）
@@ -378,7 +467,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
               {job.jobType === "form_posting" ? (
                 <>
-                  {/* 1. 送信文面内容 */}
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">📄 送信文面内容</span>
                     {job.formContent ? (
@@ -388,7 +476,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                     ) : <span className="text-slate-300 font-normal">未登録</span>}
                   </div>
 
-                  {/* 2. 入力情報 */}
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">📋 入力情報リスト</span>
                     {job.inputInfo ? (
@@ -398,7 +485,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                     ) : <span className="text-slate-300 font-normal">未登録</span>}
                   </div>
 
-                  {/* 3. 新設された3つ目の追加入力枠リンク（ワーカー側表示） */}
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600 truncate max-w-[130px]">
                       🔗 {job.additionalLinkTitle || "その他追加リンク"}
@@ -412,7 +498,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                 </>
               ) : (
                 <>
-                  {/* リスト作成のケース */}
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">🌐 抽出ターゲットサイト</span>
                     {job.siteUrl ? (
@@ -457,7 +542,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </div>
           )}
 
-          {/* 💡【リニューアル】報告コメント / 作業メモ入力のテーマカラーを新ロゴに合わせたエメラルドトーンへ */}
+          {/* 報告コメント / 作業メモ入力 */}
           {isMyJob && (
             <div className="bg-emerald-50/30 border-2 border-emerald-400/60 rounded p-4 space-y-2.5 shadow-md transition-all animate-fade-in">
               <h2 className="text-xs font-black text-emerald-950 uppercase tracking-wider border-l-4 border-[#5CA685] pl-2 flex items-center gap-1.5 select-none">
@@ -469,12 +554,12 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               <textarea
                 value={workerComment}
                 onChange={(e) => setWorkerComment(e.target.value)}
-                disabled={job.status === "review" || job.status === "completed"}
+                disabled={myStatus === "review" || myStatus === "completed"}
                 placeholder="例：50件目までフォーム送信完了しました。一部のアドレスがエラーだったため、SC上でスキップ処理を入れています。稼働ログに残らない特記事項など、自由にメモにご活用ください！"
                 rows={4}
                 className="w-full border-2 border-emerald-200 rounded p-2.5 text-xs font-bold outline-none focus:border-[#5CA685] focus:ring-2 focus:ring-emerald-100 bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500 resize-y shadow-inner transition-all"
               />
-              {(job.status === "assigned" || job.status === "working" || job.status === "paused") && (
+              {(myStatus === "assigned" || myStatus === "working" || myStatus === "paused") && (
                 <div className="flex justify-end pt-0.5">
                   <button
                     type="button"
@@ -499,27 +584,35 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </div>
 
             <div className="p-4 space-y-4">
+              {/* 受託枠インジケーター */}
+              <div className="bg-slate-100 border border-slate-300 p-2.5 rounded text-[11px] font-bold text-slate-600 flex justify-between items-center select-none">
+                <span>👥 現在の受託状況:</span>
+                <span className="font-mono text-xs font-black text-[#5CA685]">
+                  {currentAssignedCount} / {workerLimit} 名（定員）
+                </span>
+              </div>
+
               <div className="bg-slate-50 border-2 border-slate-200 p-3 rounded text-center">
-                <div className={`text-sm font-black ${job.status === 'working' ? 'text-rose-600 animate-pulse' : 'text-slate-800'}`}>
-                  {job.status === 'open' ? '🔓 未受諾（募集中）' : 
-                   job.status === 'assigned' ? '📥 受諾済み（準備中）' : 
-                   job.status === 'working' ? '🔴 現在稼働中' : 
-                   job.status === 'paused' ? '⏸️ 一時停止中' : 
-                   job.status === 'review' ? '⌛ オーナー検収待ち' : job.status}
+                <div className={`text-sm font-black ${myStatus === 'working' ? 'text-rose-600 animate-pulse' : 'text-slate-800'}`}>
+                  {myStatus === 'open' ? '🔓 未受諾（募集中）' : 
+                   myStatus === 'assigned' ? '📥 受諾済み（準備中）' : 
+                   myStatus === 'working' ? '🔴 現在稼働中' : 
+                   myStatus === 'paused' ? '⏸️ 一時停止中' : 
+                   myStatus === 'review' ? '⌛ オーナー検収待ち' : myStatus}
                 </div>
               </div>
 
-              {/* 💡 積算時間ボードの背景もエメラルドトーンにリニューアル */}
-              {(job.status === "working" || job.status === "paused" || job.status === "review") && (
+              {/* 積算時間ボード */}
+              {(myStatus === "assigned" || myStatus === "working" || myStatus === "paused" || myStatus === "review") && (
                 <div className="p-4 bg-emerald-50/40 border-2 border-emerald-200 text-slate-900 rounded font-sans shadow-inner space-y-3.5">
                   <div>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">ACCUMULATED TIME / これまでの積算時間</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">ACCUMULATED TIME / あなたの積算時間</span>
                     <p className="text-xl font-black text-[#5CA685] tracking-tight font-mono tabular-nums">
-                      {formatTime(job.totalAccumulatedSeconds || 0)}
+                      {formatTime(myJobData?.totalAccumulatedSeconds || 0)}
                     </p>
                   </div>
                   
-                  {job.status === "working" && job.lastStartedAt && (
+                  {myStatus === "working" && myJobData?.lastStartedAt && (
                     <div className="border-t border-emerald-200 pt-2.5">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">START TIME / 今回の開始時刻</span>
                       <p className="text-xs font-bold text-slate-600 tracking-wide">
@@ -531,7 +624,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               )}
 
               <div className="space-y-2">
-                {job.status === 'open' && (
+                {myStatus === 'open' && (
                   <button 
                     type="button" 
                     onClick={handleToggleWish}
@@ -547,14 +640,14 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                   <button 
                     type="button" 
                     onClick={() => triggerModal("accept")}
-                    disabled={submitting}
-                    className="w-full py-3 bg-[#5CA685] hover:bg-[#4A9272] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-50"
+                    disabled={submitting || currentAssignedCount >= workerLimit}
+                    className="w-full py-3 bg-[#5CA685] hover:bg-[#4A9272] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {job.status === 'open' ? 'この案件を引き受ける' : '他の方が受諾済みの案件です'}
+                    {currentAssignedCount >= workerLimit ? '❌ 定員に達したため締め切られました' : 'この案件を引き受ける'}
                   </button>
                 ) : (
                   <>
-                    {job.status === "assigned" && (
+                    {myStatus === "assigned" && (
                       <button 
                         type="button" 
                         onClick={() => triggerModal("start")}
@@ -565,7 +658,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                       </button>
                     )}
 
-                    {job.status === "paused" && (
+                    {myStatus === "paused" && (
                       <button 
                         type="button" 
                         onClick={() => triggerModal("start")}
@@ -576,7 +669,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                       </button>
                     )}
 
-                    {job.status === "working" && (
+                    {myStatus === "working" && (
                       <div className="grid grid-cols-1 gap-2">
                         <button 
                           type="button" 
@@ -597,7 +690,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                       </div>
                     )}
 
-                    {job.status === "review" && (
+                    {myStatus === "review" && (
                       <div className="p-3 bg-amber-50 border-2 border-amber-300 text-amber-800 text-center rounded text-xs font-bold">
                         ただいまオーナーの検収を待っています。
                       </div>

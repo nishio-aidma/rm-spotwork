@@ -19,7 +19,22 @@ export default function WorkerJobsPage() {
   const fetchJobsAndWishlist = async (userId: string) => {
     try {
       const jobSnap = await getDocs(collection(db, "jobs"));
-      const allJobs = jobSnap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
+      const allJobs = jobSnap.docs.map(d => {
+        const data = d.data() as any;
+        
+        // 💡【既存データ互換処理】もし過去に作られた「古い1人専用の案件」だった場合、
+        // メモリ上で自動的に複数人用のデータ構造（workersマップ）に変換して、一覧でのクラッシュを防ぐ
+        if (data.workerId && !data.workers) {
+          data.workers = {
+            [data.workerId]: {
+              status: data.status || "assigned",
+              totalAccumulatedSeconds: data.totalAccumulatedSeconds || 0
+            }
+          };
+        }
+        
+        return { id: d.id, ...data };
+      }) as any;
       
       // 2段階絶対優先ソート（1:緊急度順 ➔ 2:期日順）
       allJobs.sort((a: any, b: any) => {
@@ -134,6 +149,8 @@ export default function WorkerJobsPage() {
                     <th className="p-3 border-r border-slate-300 w-12 text-center">保存</th>
                     <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
                     <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
+                    {/* 💡【新設】オーナー側の比率と完全同期させるための「受託状況」列を追加 */}
+                    <th className="p-3 border-r border-slate-300 w-24 text-center">受託状況</th>
                     <th className="p-3 border-r border-slate-300">案件タイトル</th>
                     <th className="p-3 border-r border-slate-300 w-20 text-right">件数</th>
                     <th className="p-3 border-r border-slate-300 w-28 text-center">期日</th>
@@ -150,8 +167,13 @@ export default function WorkerJobsPage() {
                       ? "bg-amber-100/50 hover:bg-amber-200/60" 
                       : "bg-white hover:bg-slate-50";
 
+                    // 💡【定員計算】受託しているワーカー数と上限枠を正確に算出
+                    const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
+                    const limit = job.workerLimit || 1;
+                    const isFull = currentWorkerCount >= limit;
+
                     return (
-                      <tr key={job.id} className={`${rowBgClass} transition-colors`}>
+                      <tr key={job.id} className={`${rowBgClass} transition-colors ${isFull ? "opacity-70 bg-slate-50/50" : ""}`}>
                         <td className="p-3 border-r border-slate-200 text-center select-none">
                           <button type="button" onClick={(e) => toggleWish(e, job.id)} className={`text-sm transition-transform active:scale-125 block w-full h-full text-center ${isWished ? "text-amber-400 font-bold" : "text-slate-300 hover:text-slate-400"}`}>
                             {isWished ? "★" : "☆"}
@@ -171,6 +193,18 @@ export default function WorkerJobsPage() {
                             {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト作成'}
                           </span>
                         </td>
+
+                        {/* 💡【新設】ワーカー向けリアルタイム定員カウンターメーター */}
+                        <td className="p-3 border-r border-slate-200 text-center font-bold text-slate-700">
+                          <span className={`font-mono text-[11px] px-1.5 py-0.5 rounded shadow-inner block text-center ${
+                            isFull 
+                              ? 'text-slate-400 bg-slate-100 border border-slate-200 font-normal' 
+                              : 'text-[#0082C8] bg-blue-50 border border-blue-100 font-black'
+                          }`}>
+                            {isFull ? "満員締切" : `${currentWorkerCount} / ${limit}名`}
+                          </span>
+                        </td>
+
                         <td className="p-3 border-r border-slate-200 font-black text-slate-950 truncate">
                           <Link 
                             href={`/worker/jobs/${job.id}`} 
@@ -187,7 +221,14 @@ export default function WorkerJobsPage() {
                         </td>
                         <td className="p-3 border-r border-slate-200 text-slate-700 truncate" title={job.scClient}>{job.scClient || "-"}</td>
                         <td className="p-3 text-center">
-                          <Link href={`/worker/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black text-[11px] block active:scale-95 transition-transform">確認 →</Link>
+                          <Link 
+                            href={`/worker/jobs/${job.id}`} 
+                            className={`text-[11px] font-black block active:scale-95 transition-transform hover:underline ${
+                              isFull ? "text-slate-400" : "text-[#0082C8]"
+                            }`}
+                          >
+                            {isFull ? "確認 →" : "受託する →"}
+                          </Link>
                         </td>
                       </tr>
                     );
@@ -209,6 +250,8 @@ export default function WorkerJobsPage() {
                     <th className="p-3 border-r border-amber-200 w-12 text-center">解除</th>
                     <th className="p-3 border-r border-amber-200 w-20 text-center">緊急度</th>
                     <th className="p-3 border-r border-amber-200 w-26 text-center">仕事種別</th>
+                    {/* 💡 ウィッシュリスト側にも同じ比率をシンクロ配置 */}
+                    <th className="p-3 border-r border-amber-200 w-24 text-center">受託状況</th>
                     <th className="p-3 border-r border-amber-200">キープ案件名</th>
                     <th className="p-3 border-r border-amber-200 w-20 text-right">件数</th>
                     <th className="p-3 border-r border-amber-200 w-28 text-center">期日</th>
@@ -224,8 +267,12 @@ export default function WorkerJobsPage() {
                       ? "bg-amber-100/50 hover:bg-amber-200/60" 
                       : "bg-white hover:bg-slate-50";
 
+                    const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
+                    const limit = job.workerLimit || 1;
+                    const isFull = currentWorkerCount >= limit;
+
                     return (
-                      <tr key={job.id} className={`${rowBgClass} transition-colors`}>
+                      <tr key={job.id} className={`${rowBgClass} transition-colors ${isFull ? "opacity-70 bg-slate-50/50" : ""}`}>
                         <td className="p-3 border-r border-slate-200 text-center select-none">
                           <button type="button" onClick={(e) => toggleWish(e, job.id)} className="text-slate-300 hover:text-rose-600 transition-colors text-xs block w-full text-center" title="キープを解除">❌</button>
                         </td>
@@ -243,6 +290,17 @@ export default function WorkerJobsPage() {
                             {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト作成'}
                           </span>
                         </td>
+
+                        <td className="p-3 border-r border-slate-200 text-center font-bold text-slate-700">
+                          <span className={`font-mono text-[11px] px-1.5 py-0.5 rounded shadow-inner block text-center ${
+                            isFull 
+                              ? 'text-slate-400 bg-slate-100 border border-slate-200 font-normal' 
+                              : 'text-[#0082C8] bg-blue-50 border border-blue-100 font-black'
+                          }`}>
+                            {isFull ? "満員締切" : `${currentWorkerCount} / ${limit}名`}
+                          </span>
+                        </td>
+
                         <td className="p-3 border-r border-slate-200 font-black text-slate-950 truncate">
                           <Link 
                             href={`/worker/jobs/${job.id}`} 
@@ -259,7 +317,14 @@ export default function WorkerJobsPage() {
                         </td>
                         <td className="p-3 border-r border-slate-200 text-slate-700 truncate" title={job.scClient}>{job.scClient || "-"}</td>
                         <td className="p-3 text-center">
-                          <Link href={`/worker/jobs/${job.id}`} className="text-[#0082C8] hover:underline font-black block active:scale-95 transition-transform">確認 →</Link>
+                          <Link 
+                            href={`/worker/jobs/${job.id}`} 
+                            className={`text-[11px] font-black block active:scale-95 transition-transform hover:underline ${
+                              isFull ? "text-slate-400" : "text-[#0082C8]"
+                            }`}
+                          >
+                            確認 →
+                          </Link>
                         </td>
                       </tr>
                     );
