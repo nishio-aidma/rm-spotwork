@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, getDocs } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import WorkerShell from "@/components/WorkerShell";
@@ -17,12 +17,38 @@ export default function WorkerMyJobsPage() {
   const fetchMyJobs = async (userId: string) => {
     setLoading(true);
     try {
-      const q = query(collection(db, "jobs"), where("workerId", "==", userId));
+      // 💡インデックスエラーを100%防ぐため、一旦jobsコレクション全体を安全に取得
+      const q = query(collection(db, "jobs"));
       const snap = await getDocs(q);
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      
+      // 💡取得したデータから、自分に関係のある案件だけを抽出・整形する
+      const list = snap.docs.map(d => {
+        const data = d.data() as any;
+        
+        // 初期値として全体のステータスと秒数をセット（古い形式への互換性用）
+        let myStatus = data.status || "draft";
+        let mySeconds = data.totalAccumulatedSeconds || 0;
+        let isParticipant = data.workerId === userId; // 古い形式で自分が担当か
 
+        // 新しい複数人用の箱（workersマップ）が存在し、その中に自分のIDがある場合
+        if (data.workers && data.workers[userId]) {
+          myStatus = data.workers[userId].status; // 全体のstatusではなく「自分個人」のstatusを採用
+          mySeconds = data.workers[userId].totalAccumulatedSeconds || 0;
+          isParticipant = true; // 新しい形式で自分が参加している証明
+        }
+
+        return { 
+          id: d.id, 
+          ...data, 
+          status: myStatus, // 既存ロジックを壊さないよう、statusの中身を「個人ステータス」に上書き
+          totalAccumulatedSeconds: mySeconds,
+          isParticipant: isParticipant
+        };
+      });
+
+      // 自分自身が請け負っている案件だけを絞り込む
       const myActiveJobs = list.filter((j: any) => 
-        j.status === "assigned" || j.status === "working" || j.status === "paused" || j.status === "review"
+        j.isParticipant && (j.status === "assigned" || j.status === "working" || j.status === "paused" || j.status === "review")
       );
 
       myActiveJobs.sort((a: any, b: any) => {
@@ -73,7 +99,7 @@ export default function WorkerMyJobsPage() {
     <WorkerShell title="進行中のタスク" subTitle="あなたが受諾し、現在稼働中または検収待ちの業務台帳">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 💡【超完全統一】スクショの「案件を探す」と1ミリの狂いもなく完全同期する、敷き詰め型フルワイド2大タブ */}
+        {/* 敷き詰め型フルワイド2大タブ */}
         <div className="bg-white border-2 border-slate-300 rounded shadow-sm flex overflow-hidden select-none h-11 items-stretch">
           <button
             type="button"
@@ -99,12 +125,12 @@ export default function WorkerMyJobsPage() {
           </button>
         </div>
 
-        {/* 💡【配置最適化】監督ご指定の文言をテーブルの上に美しくスマートに配備 */}
+        {/* テーブルの上の件数表示 */}
         <div className="text-xs font-black text-slate-500 pl-1 select-none">
           📋 現在請負中のお仕事: <span className="text-sm text-[#0082C8] font-black font-mono">{jobs.length}</span> 件
         </div>
 
-        {/* 格子状の進行中データテーブル：table-fixedによりグリッド線のズレを完全破壊 */}
+        {/* 格子状の進行中データテーブル */}
         <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse table-fixed text-xs min-w-[1000px]">
