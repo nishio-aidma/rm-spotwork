@@ -41,18 +41,11 @@ export default function OwnerShell({ children, title, subTitle }: OwnerShellProp
       <header className="h-14 bg-[#5CA685] flex items-center px-4 justify-between text-white shadow-sm z-10 flex-shrink-0">
         <div className="flex items-center gap-4">
           
-          {/* ロゴエンブレムボックス */}
-          <div className="bg-gradient-to-br from-white/18 to-white/4 px-3 py-1.5 rounded-md border border-white/25 flex items-center gap-2 select-none shadow-inner backdrop-blur-xs">
-            <img 
-              src="/sukiwa-ku_icon.png" 
-              alt="タスクミー ロゴ" 
-              className="h-6 w-6 rounded object-cover shadow-xs select-none" 
-            />
-            <div className="flex flex-col justify-center">
-              <span className="text-sm font-black tracking-wide leading-none text-white bg-clip-text bg-gradient-to-r from-white to-slate-100 drop-shadow-md">
-                タスクミー<span className="text-[10px] text-white/80 font-bold ml-0.5">✨</span>
-              </span>
-            </div>
+          {/* ロゴテキストボックス（画像と絵文字を削除してスッキリ配置） */}
+          <div className="bg-gradient-to-br from-white/18 to-white/4 px-3 py-1.5 rounded-md border border-white/25 flex items-center justify-center select-none shadow-inner backdrop-blur-xs">
+            <span className="text-sm font-black tracking-wide leading-none text-white drop-shadow-md">
+              タスクミー
+            </span>
           </div>
 
           <div className="flex items-center gap-3 border-l border-white/20 pl-4 h-8">
