@@ -16,23 +16,24 @@ export async function POST(request: Request) {
     let messageBody = message || "";
     
     if (!messageBody) {
-      messageBody = `📢 【支援準備】更新のお知らせ\n\n` +
-        `🏢 クライアント名: ${companyName}\n` +
-        `📊 全体進捗ステータス: 【 ${status} 】\n` +
+      // 💡【修正箇所】絵文字を無くし、シンプルでビジネスライクな文面に変更しました
+      messageBody = `【支援準備】更新のお知らせ\n\n` +
+        `・クライアント名: ${companyName}\n` +
+        `・全体進捗ステータス: [ ${status} ]\n` +
         `------------------------------------------\n`;
       
       if (updatedFields && updatedFields.length > 0) {
-        messageBody += `🔧 今回変更された内容:\n${updatedFields.map((f: string) => ` ・ ${f}`).join("\n")}\n`;
+        messageBody += `・今回変更された内容:\n${updatedFields.map((f: string) => `  - ${f}`).join("\n")}\n`;
       } else {
-        messageBody += `📝 マスタデータが上書き保存されました（項目の変更なし）\n`;
+        messageBody += `・マスタデータが上書き保存されました（項目の変更なし）\n`;
       }
 
       messageBody += `------------------------------------------\n` +
-        `📅 MEMBERS招待日: ${inviteDate || "未入力"}\n` +
-        `📅 MEMBERS参加日: ${joinDate || "未入力"}\n` +
+        `・MEMBERS招待日: ${inviteDate || "未入力"}\n` +
+        `・MEMBERS参加日: ${joinDate || "未入力"}\n` +
         `------------------------------------------\n` +
-        `🔗 管理画面で確認:\n${currentUrl || "URL取得失敗"}\n\n` +
-        `システムから自動送信されました。進捗確認をお願いします。`;
+        `・管理画面で確認:\n${currentUrl || "URL取得失敗"}\n\n` +
+        `※システムから自動送信されました。進捗確認をお願いします。`;
     }
 
     // 👑 「mem-bers（e）」の正しいドメインへ通信
