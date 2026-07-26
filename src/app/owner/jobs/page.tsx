@@ -22,7 +22,7 @@ export default function OwnerJobsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [targetJob, setTargetJob] = useState<{ id: string; title: string } | null>(null);
   
-  // 💡 Windows標準alert排除用のカスタムエラーポップアップステート
+  // Windows標準alert不使用のためのカスタムエラーモーダル用ステート
   const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null);
 
   const getTodayStr = () => {
@@ -103,23 +103,54 @@ export default function OwnerJobsPage() {
     return () => unsubscribe();
   }, []);
 
-  // 💡【請負中判定の拡張】募集中であっても1人以上受託者がいれば「請負中」に含めるロジック
+  // 💡【タブ判定とステータスフィルターロジックの改善】
   useEffect(() => {
     let result = [...allJobs];
 
     if (activeTab === "recruiting") {
       result = result.filter(job => job.status === "open" || job.status === "draft" || job.status === "expired");
-    } else if (activeTab === "working") {
+    } 
+    else if (activeTab === "working") {
       result = result.filter(job => {
         const hasWorker = job.workers && Object.keys(job.workers).length > 0;
         return job.status === "assigned" || job.status === "working" || job.status === "paused" || (job.status === "open" && hasWorker);
       });
-    } else if (activeTab === "completed") {
-      result = result.filter(job => job.status === "review" || job.status === "completed");
+    } 
+    else if (activeTab === "completed") {
+      // 💡 参加ワーカーの中に1人でも「検収待ち (review)」または「完了 (completed)」の人がいるかチェック
+      result = result.filter(job => {
+        const workersList = job.workers ? Object.values(job.workers) : [];
+        const hasReviewWorker = workersList.some((w: any) => w.status === "review");
+        const hasCompletedWorker = workersList.some((w: any) => w.status === "completed");
+
+        return job.status === "review" || job.status === "completed" || hasReviewWorker || hasCompletedWorker;
+      });
+
+      // 💡【ご要望を反映】「すべて」選択時（filterStatus === "all"）は、検収中（review）のみを表示し、完了（completed）は隠す
+      if (filterStatus === "all") {
+        result = result.filter(job => {
+          const workersList = job.workers ? Object.values(job.workers) : [];
+          const hasReviewWorker = workersList.some((w: any) => w.status === "review");
+          return job.status === "review" || hasReviewWorker;
+        });
+      }
     }
 
+    // ドロップダウンでの個別ステータス絞り込み処理
     if (filterStatus !== "all") {
-      result = result.filter(job => job.status === filterStatus);
+      result = result.filter(job => {
+        if (filterStatus === "review") {
+          const workersList = job.workers ? Object.values(job.workers) : [];
+          const hasReviewWorker = workersList.some((w: any) => w.status === "review");
+          return job.status === "review" || hasReviewWorker;
+        }
+        if (filterStatus === "completed") {
+          const workersList = job.workers ? Object.values(job.workers) : [];
+          const isAllCompleted = workersList.length > 0 && workersList.every((w: any) => w.status === "completed");
+          return job.status === "completed" || isAllCompleted;
+        }
+        return job.status === filterStatus;
+      });
     }
 
     if (filterJobType !== "all") {
@@ -139,12 +170,18 @@ export default function OwnerJobsPage() {
   };
 
   const recruitingCount = allJobs.filter(j => j.status === "open" || j.status === "draft" || j.status === "expired").length;
-  // 💡 請負中バッジの件数カウントも同様に、受託者が1人以上いる募集中案件を含める
+  
   const workingCount = allJobs.filter(j => {
     const hasWorker = j.workers && Object.keys(j.workers).length > 0;
     return j.status === "assigned" || j.status === "working" || j.status === "paused" || (j.status === "open" && hasWorker);
   }).length;
-  const completedCount = allJobs.filter(j => j.status === "review" || j.status === "completed").length;
+
+  // 💡【バッジカウントの更新】「納品済（検収中）」バッジには、現在検収が必要な（1人でもreviewワーカーがいる）案件の件数をカウント表示
+  const completedCount = allJobs.filter(j => {
+    const workersList = j.workers ? Object.values(j.workers) : [];
+    const hasReviewWorker = workersList.some((w: any) => w.status === "review");
+    return j.status === "review" || hasReviewWorker;
+  }).length;
 
   const triggerDeleteModal = (jobId: string, title: string) => {
     setTargetJob({ id: jobId, title });
@@ -209,7 +246,7 @@ export default function OwnerJobsPage() {
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
                 }`}
               >
-                📢 募集中
+                募集中
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'recruiting' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
                   {recruitingCount}
                 </span>
@@ -223,7 +260,7 @@ export default function OwnerJobsPage() {
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
                 }`}
               >
-                📥 請負中
+                請負中
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'working' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
                   {workingCount}
                 </span>
@@ -237,14 +274,14 @@ export default function OwnerJobsPage() {
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
                 }`}
               >
-                🏁 納品済
+                納品済（検収中）
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'completed' ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-700'}`}>
                   {completedCount}
                 </span>
               </button>
             </div>
 
-            {/* ステータス詳細フィルター */}
+            {/* 💡【ご要望を反映】アイコンを排除したシンプルなステータスフィルター */}
             <div className="flex items-center gap-2 border-l xl:border-l-2 border-slate-300 pl-2 xl:pl-4">
               <label className="font-black text-slate-500">ステータス:</label>
               <select 
@@ -255,22 +292,22 @@ export default function OwnerJobsPage() {
                 <option value="all">すべて</option>
                 {activeTab === 'recruiting' && (
                   <>
-                    <option value="draft">📁 下書き</option>
-                    <option value="open">🟢 募集中</option>
-                    <option value="expired">⏳ 期限切れ</option>
+                    <option value="draft">下書き</option>
+                    <option value="open">募集中</option>
+                    <option value="expired">期限切れ</option>
                   </>
                 )}
                 {activeTab === 'working' && (
                   <>
-                    <option value="assigned">📥 受諾済み</option>
-                    <option value="working">🔵 進行中</option>
-                    <option value="paused">⏸️ 一時停止</option>
+                    <option value="assigned">受諾済み</option>
+                    <option value="working">進行中</option>
+                    <option value="paused">一時停止</option>
                   </>
                 )}
                 {activeTab === 'completed' && (
                   <>
-                    <option value="review">🟡 検収待ち</option>
-                    <option value="completed">🏁 完了</option>
+                    <option value="review">検収中（検収待ち）</option>
+                    <option value="completed">完了</option>
                   </>
                 )}
               </select>
@@ -284,8 +321,8 @@ export default function OwnerJobsPage() {
                 className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#0082C8]"
               >
                 <option value="all">すべて表示</option>
-                <option value="form_posting">✉️ フォーム投稿</option>
-                <option value="list_creation">📋 リスト作成</option>
+                <option value="form_posting">フォーム投稿</option>
+                <option value="list_creation">リスト作成</option>
               </select>
             </div>
 
@@ -297,8 +334,8 @@ export default function OwnerJobsPage() {
                 className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#0082C8]"
               >
                 <option value="all">すべて表示</option>
-                <option value="3">🔴 至急</option>
-                <option value="2">🟡 高め</option>
+                <option value="3">至急</option>
+                <option value="2">高め</option>
                 <option value="1">通常</option>
               </select>
             </div>
@@ -321,7 +358,6 @@ export default function OwnerJobsPage() {
                   <th className="p-3 border-r border-slate-300 w-24">ステータス</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
                   <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
-                  {/* 💡【表示拡張】受託状況列の幅を広げ、ワーカー名と個別状況を表示 */}
                   <th className="p-3 border-r border-slate-300 w-48 text-center">受託状況・担当ワーカー</th>
                   <th className="p-3 border-r border-slate-300">案件タイトル</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-right">件数</th>
@@ -335,8 +371,6 @@ export default function OwnerJobsPage() {
                 {filteredJobs.map((job) => {
                   const isUrgentDeadline = isThisWeekDeadline(job.deadline);
                   const limit = job.workerLimit || 1;
-                  
-                  // ワーカー情報のリスト化
                   const workerEntries = job.workers ? Object.entries(job.workers) : [];
 
                   return (
@@ -376,11 +410,11 @@ export default function OwnerJobsPage() {
 
                       <td className="p-3 border-r border-slate-200">
                         <span className="bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded text-[11px] font-bold block text-center">
-                          {job.jobType === 'form_posting' ? '✉️ フォーム' : '📋 リスト作成'}
+                          {job.jobType === 'form_posting' ? 'フォーム' : 'リスト作成'}
                         </span>
                       </td>
 
-                      {/* 💡【新機能】受託状況・担当ワーカー名・稼働ステータス・メモ新着アイコンのカード型表示 */}
+                      {/* 受託状況・担当ワーカー表示 */}
                       <td className="p-2.5 border-r border-slate-200">
                         {job.status === "draft" || job.status === "expired" ? (
                           <span className="text-slate-300 font-normal block text-center">-</span>
@@ -409,19 +443,18 @@ export default function OwnerJobsPage() {
                                       wStatus === 'working' ? 'bg-rose-100 text-rose-700 animate-pulse' :
                                       wStatus === 'paused' ? 'bg-amber-100 text-amber-800' :
                                       wStatus === 'assigned' ? 'bg-blue-100 text-blue-700' :
-                                      wStatus === 'review' ? 'bg-orange-100 text-orange-800' :
+                                      wStatus === 'review' ? 'bg-orange-100 text-orange-800 font-bold' :
                                       wStatus === 'completed' ? 'bg-slate-200 text-slate-600' :
                                       'bg-slate-100 text-slate-600'
                                     }`}>
-                                      {wStatus === 'working' ? '🔴 稼働中' :
-                                       wStatus === 'paused' ? '⏸️ 停止中' :
-                                       wStatus === 'assigned' ? '📥 受諾済' :
-                                       wStatus === 'review' ? '🟡 検収待' :
-                                       wStatus === 'completed' ? '🏁 完了' : wStatus}
+                                      {wStatus === 'working' ? '稼働中' :
+                                       wStatus === 'paused' ? '停止中' :
+                                       wStatus === 'assigned' ? '受諾済' :
+                                       wStatus === 'review' ? '検収待' :
+                                       wStatus === 'completed' ? '完了' : wStatus}
                                     </span>
                                   </div>
                                   
-                                  {/* ワーカーからの報告メモ新着表示 */}
                                   {hasComment && (
                                     <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-300 rounded px-1.5 py-0.5 text-[9px] text-emerald-900 font-bold truncate" title={wData.workerComment}>
                                       <span className="bg-emerald-600 text-white text-[8px] px-1 rounded font-black shrink-0">新着メモ</span>
@@ -481,14 +514,14 @@ export default function OwnerJobsPage() {
             <div className="p-16 text-center text-slate-400 italic font-medium bg-slate-50">
               {activeTab === 'recruiting' && "該当する募集中・下書き・期限切れの案件はありません。"}
               {activeTab === 'working' && "該当するワーカー請負中・稼働中の案件はありません。"}
-              {activeTab === 'completed' && "該当する納品済・完了の案件はありません。"}
+              {activeTab === 'completed' && "現在、検収待ち（検収中）の案件はありません。完了済みの案件はステータスフィルターから『完了』を選択して確認できます。"}
             </div>
           )}
         </div>
 
       </div>
 
-      {/* カスタム確認ポップアップ（案件削除用） */}
+      {/* カスタム確認ポップアップ */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
@@ -530,7 +563,7 @@ export default function OwnerJobsPage() {
         </div>
       )}
 
-      {/* 💡 カスタムエラー表示ポップアップ（Windows標準alert不使用） */}
+      {/* カスタムエラーモーダル（Windows標準alert不使用） */}
       {errorModalMessage && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
