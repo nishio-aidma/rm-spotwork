@@ -185,12 +185,20 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       } 
       
       else if (action === "approve") {
-        // 一括承認
+        // 全員一括承認（定員に達している場合は案件全体もcompletedへ）
         const updates: any = {
-          status: "completed",
           approvedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         };
+        
+        const limit = job.workerLimit || 1;
+        const currentCount = job.workers ? Object.keys(job.workers).length : 0;
+        
+        // 定員を満たしていれば案件全体もcompletedにする
+        if (currentCount >= limit) {
+          updates.status = "completed";
+        }
+
         if (job.workers) {
           Object.keys(job.workers).forEach(uid => {
             updates[`workers.${uid}.status`] = "completed";
@@ -199,7 +207,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         await updateDoc(jobRef, updates);
         
         setJob((prev: any) => {
-          const newJob = { ...prev, status: "completed" };
+          const newJob = { ...prev, status: updates.status || prev.status };
           if (newJob.workers) {
             Object.keys(newJob.workers).forEach(uid => {
               newJob.workers[uid].status = "completed";
@@ -224,9 +232,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       }
 
       else if (action === "reject") {
-        // 一括差し戻し
+        // 全員一括差し戻し
         const updates: any = {
-          status: "assigned",
           updatedAt: serverTimestamp()
         };
         if (job.workers) {
@@ -237,7 +244,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         await updateDoc(jobRef, updates);
 
         setJob((prev: any) => {
-          const newJob = { ...prev, status: "assigned" };
+          const newJob = { ...prev };
           if (newJob.workers) {
             Object.keys(newJob.workers).forEach(uid => {
               newJob.workers[uid].status = "assigned";
@@ -247,25 +254,27 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         });
       }
 
-      // 💡【新機能】ワーカー個別の承認処理
+      // 💡【ワーカー個別の承認処理】
       else if (action === "individual_approve" && workerUid) {
         const updatedWorkers = { ...job.workers };
         if (updatedWorkers[workerUid]) {
           updatedWorkers[workerUid].status = "completed";
         }
 
-        // 参加者全員がcompletedになったか判定
-        const allCompleted = Object.values(updatedWorkers).every(
-          (w: any) => w.status === "completed"
-        );
-        const finalJobStatus = allCompleted ? "completed" : job.status;
+        // 参加者全員がcompletedになり、かつ定員に達しているか判定
+        const limit = job.workerLimit || 1;
+        const currentCount = Object.keys(updatedWorkers).length;
+        const allCompleted = Object.values(updatedWorkers).every((w: any) => w.status === "completed");
+        
+        const isFullAndAllCompleted = currentCount >= limit && allCompleted;
+        const finalJobStatus = isFullAndAllCompleted ? "completed" : job.status;
 
         const updateData: any = {
           [`workers.${workerUid}.status`]: "completed",
           status: finalJobStatus,
           updatedAt: serverTimestamp()
         };
-        if (allCompleted) {
+        if (isFullAndAllCompleted) {
           updateData.approvedAt = serverTimestamp();
         }
 
@@ -278,7 +287,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         }));
       }
 
-      // 💡【新機能】ワーカー個別の差し戻し処理
+      // 💡【ワーカー個別の差し戻し処理】
       else if (action === "individual_reject" && workerUid) {
         const updatedWorkers = { ...job.workers };
         if (updatedWorkers[workerUid]) {
@@ -287,13 +296,11 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
         await updateDoc(jobRef, {
           [`workers.${workerUid}.status`]: "assigned",
-          status: "working", // 個別差し戻しが発生したため稼働中に設定
           updatedAt: serverTimestamp()
         });
 
         setJob((prev: any) => ({
           ...prev,
-          status: "working",
           workers: updatedWorkers
         }));
       }
@@ -515,8 +522,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           )}
 
-          {/* 💡【機能拡張】参加ワーカーごとの個別カルテ ＆ 個別検収・個別差し戻し操作ボード */}
-          {job.status !== "open" && job.status !== "draft" && (
+          {/* 💡【修正】受託しているワーカーが1名以上いれば、全体のステータスが募集中（open）であっても個別カルテを必ず表示 */}
+          {currentWorkerCount > 0 && job.status !== "draft" && (
             <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
               <div className="flex justify-between items-center border-l-2 border-[#5CA685] pl-2">
                 <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
@@ -553,14 +560,15 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                               ⏱️ {formatTime(wData.totalAccumulatedSeconds || 0)}
                             </span>
 
-                            {/* 個別検収・差し戻しボタンエリア */}
-                            {wStatus === "review" && (
+                            {/* 💡【解放】ワーカーがまだcompletedになっていない（作業中・受諾済・検収待ち）状態であれば、いつでも個別承認・差し戻しが可能 */}
+                            {wStatus !== "completed" && (
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
                                   onClick={() => triggerModal("individual_approve", uid)}
                                   disabled={submitting}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black px-2.5 py-1 rounded shadow-xs transition-colors"
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black px-2.5 py-1 rounded shadow-xs transition-colors cursor-pointer"
+                                  title="このワーカーの作業を承認して検収完了にする"
                                 >
                                   ✓ 個別承認
                                 </button>
@@ -568,7 +576,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                                   type="button"
                                   onClick={() => triggerModal("individual_reject", uid)}
                                   disabled={submitting}
-                                  className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black px-2.5 py-1 rounded shadow-xs transition-colors"
+                                  className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black px-2.5 py-1 rounded shadow-xs transition-colors cursor-pointer"
+                                  title="このワーカーの作業を準備中に戻す"
                                 >
                                   ↩ 個別差し戻し
                                 </button>
@@ -667,14 +676,15 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
-                {(job.status === "review" || job.status === "working") && (
+                {/* 💡【解放】受託者が1名以上いれば、全体のステータスがopen（募集中）であっても一括操作ボタンを常時表示 */}
+                {currentWorkerCount > 0 && job.status !== "draft" && (
                   <div className="space-y-2 bg-slate-50 p-2.5 border border-slate-300 rounded">
                     <span className="text-[10px] font-black text-slate-400 block mb-1">全メンバー一括操作</span>
                     <button 
                       type="button"
                       onClick={() => triggerModal("approve")}
                       disabled={submitting}
-                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded border border-black/10 shadow-sm transition-colors"
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded border border-black/10 shadow-sm transition-colors cursor-pointer"
                     >
                       ✓ 参加者全員を一括検収承認
                     </button>
@@ -683,7 +693,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                       type="button"
                       onClick={() => triggerModal("reject")}
                       disabled={submitting}
-                      className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded border border-black/10 shadow-sm transition-colors"
+                      className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded border border-black/10 shadow-sm transition-colors cursor-pointer"
                     >
                       ↩ 参加者全員を一括差し戻し
                     </button>
@@ -736,12 +746,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   : modalType === "draft"
                   ? "この案件の受諾募集を一度ストップし、非公開の『下書き状態』に戻しますか？\n\n戻すと、ワーカー側の案件を探す画面から一時的に表示が消えます。"
                   : modalType === "reject"
-                  ? "提出された報告を差し戻し、参加ワーカー全員のステータスを『準備中』に戻しますか？\n\n戻すことで、ワーカーがもう一度タイマーを起動して業務の再開と再提出を行えるようになります。"
+                  ? "参加ワーカー全員の作業ステータスを『準備中』に差し戻しますか？"
                   : modalType === "individual_approve"
                   ? `【${workerNames[selectedWorkerUid || ""] || "ワーカー"}】さんの報告内容と作業時間を承認（検収完了）しますか？`
                   : modalType === "individual_reject"
                   ? `【${workerNames[selectedWorkerUid || ""] || "ワーカー"}】さんの報告を差し戻し、再稼働できる状態に戻しますか？`
-                  : "この案件の作業内容および参加ワーカー全員の稼働時間を承認（検収完了）しますか？\n\n確定するとステータスが『完了』となり、ワーカー実績として確定します。"
+                  : "参加ワーカー全員の稼働時間を承認（検収完了）しますか？"
                 }
               </p>
 
