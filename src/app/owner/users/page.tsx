@@ -88,7 +88,7 @@ export default function OwnerWorkersPage() {
     });
   };
 
-  // 💡【新ロジック】ユーザー一覧の取得と同時に、ワーカーごとの「時間・件数・平均評価・ランク」を全自動一括計算
+  // 💡【改良されたロジック】確定データではなく打刻データ(workLogs)からリアルタイムに作業時間を合算
   const fetchAllUsersAndStats = async () => {
     if (!owner) return;
     setLoading(true);
@@ -103,14 +103,14 @@ export default function OwnerWorkersPage() {
         return timeB - timeA;
       });
 
-      // 2. 月次確定ステータスを取得（確定済みの累計稼働時間を算出するため）
-      const monthlySnap = await getDocs(collection(db, "workerMonthlyStatus"));
+      // 2. 打刻ログ(workLogs)を取得し、リアルタイムにワーカーごとの累積作業時間を合算
+      const logsSnap = await getDocs(collection(db, "workLogs"));
       const secondsMap: { [key: string]: number } = {};
       
-      monthlySnap.forEach(d => {
-        const mData = d.data();
-        if (mData.status === "confirmed" && mData.workerId) {
-          secondsMap[mData.workerId] = (secondsMap[mData.workerId] || 0) + (mData.totalSeconds || 0);
+      logsSnap.forEach(d => {
+        const logData = d.data();
+        if (logData.workerId) {
+          secondsMap[logData.workerId] = (secondsMap[logData.workerId] || 0) + (Number(logData.seconds) || 0);
         }
       });
 
@@ -377,7 +377,7 @@ export default function OwnerWorkersPage() {
               </div>
             </div>
 
-            {/* 💡【新機能拡張】作業者（ワーカー）アカウント台帳：時間・量・★評価・ランクを表示 */}
+            {/* 💡【更新】作業者（ワーカー）アカウント台帳：リアルタイム累計時間を表示 */}
             <div className="space-y-2 pt-2">
               <div className="flex items-center gap-2 px-1">
                 <span className="text-xs font-black px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-300 rounded uppercase">WORKER DIRECTORY</span>
@@ -392,7 +392,7 @@ export default function OwnerWorkersPage() {
                         <th className="p-3 border-r border-slate-300 w-24 text-center">区分</th>
                         <th className="p-3 border-r border-slate-300 w-40">スタッフ氏名</th>
                         <th className="p-3 border-r border-slate-300 w-32 text-center">ランク</th>
-                        <th className="p-3 border-r border-slate-300 w-32 text-right">確定累計時間</th>
+                        <th className="p-3 border-r border-slate-300 w-32 text-right">リアルタイム累計時間</th>
                         <th className="p-3 border-r border-slate-300 w-28 text-right">累計件数</th>
                         <th className="p-3 border-r border-slate-300 w-28 text-center">平均社内評価</th>
                         <th className="p-3 border-r border-slate-300">連絡先（メール）</th>
@@ -420,24 +420,24 @@ export default function OwnerWorkersPage() {
                               {fullName}
                             </td>
 
-                            {/* 💡【新表示】現在のランクバッジ */}
+                            {/* 現在のランクバッジ */}
                             <td className="p-3 border-r border-slate-200 text-center">
                               <span className={`px-2 py-0.5 text-[10px] font-black rounded inline-block shadow-2xs ${stats.rankColor}`}>
                                 {stats.rankBadge}
                               </span>
                             </td>
 
-                            {/* 💡【新表示】確定累計時間 */}
+                            {/* 💡【更新】全打刻からリアルタイム計算された累計時間 */}
                             <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-[#0082C8] bg-blue-50/20">
                               {formatHM(stats.totalSeconds)}
                             </td>
 
-                            {/* 💡【新表示】累計こなした件数 */}
+                            {/* 累計こなした件数 */}
                             <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-xs text-slate-800">
                               {stats.completedCount} <span className="text-[10px] font-normal text-slate-400">件</span>
                             </td>
 
-                            {/* 💡【新表示】平均社内★評価（ワーカー非公開データ） */}
+                            {/* 平均社内★評価（ワーカー非公開データ） */}
                             <td className="p-3 border-r border-slate-200 text-center font-mono font-black">
                               {stats.avgRating !== "-" ? (
                                 <span className="bg-amber-50 text-amber-900 border border-amber-300 px-2 py-0.5 rounded text-xs">
