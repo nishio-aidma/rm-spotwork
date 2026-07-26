@@ -64,7 +64,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             
             setJob(processedJob);
             
-            // ログインしている「あなた（自分自身）」専用 of 枠から、保存済みのメモを復元します
+            // ログインしている「あなた（自分自身）」専用の枠から、保存済みのメモを復元します
             if (processedJob.workers?.[user.uid]) {
               setWorkerComment(processedJob.workers[user.uid].workerComment || "");
             }
@@ -93,7 +93,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     return `${h}h ${m}m ${sec}s`;
   };
 
-  // 开始された「時刻」を見やすくフォーマットする関数
+  // 開始された「時刻」を見やすくフォーマットする関数
   const formatStartTime = (timestamp: any) => {
     if (!timestamp) return "";
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
@@ -160,7 +160,11 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       triggerModal("save_success");
     } catch (e) {
       console.error("コメントの一時保存に失敗しました:", e);
-      alert("保存に失敗しました。");
+      // Windows標準のalertは不使用（モーダル画面を実装）
+      setModalTitle("⚠️ エラー");
+      setModalMessage("コメントの保存に失敗しました。時間をおいて再度お試しください。");
+      setModalActionType("save_success");
+      setModalOpen(true);
     } finally {
       setIsSavingComment(false);
     }
@@ -177,7 +181,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       setModalMessage("これより作業を開始します。よろしいですか？\n※あなた個人の『開始時刻』が個別に記録・集計されます。");
     } else if (type === "pause") {
       setModalTitle("⏸️ 作業を一時中断する");
-      setModalMessage("休憩や中断のため、タイマーを停止しますか？\n※あなた個人のこれまでの稼働時間が集計され、実績に合算保存されます。");
+      setModalMessage("休憩や中断のため、タイマーを停止しますか？\n※計測された時間は分刻み（端数切り捨て）で集計され、実績に合算保存されます。");
     } else if (type === "complete") {
       setModalTitle("🏁 完了報告を提出する");
       setModalMessage("本日の作業をすべて終了し、オーナーへ提出しますか？\n\n※あなた以外の受託メンバーが全員完了報告を出し終えた時点で、案件全体が自動的に『検収待ち』状態へと移行します。");
@@ -212,7 +216,10 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
       if (modalActionType === "accept") {
         if (currentWorkerCount >= limit) {
-          alert("申し訳ありません。この案件はすでに募集定員（上限人数）に達したため受諾できません。");
+          setModalTitle("⚠️ 定員到達");
+          setModalMessage("申し訳ありません。この案件はすでに募集定員（上限人数）に達したため受諾できません。");
+          setModalActionType("save_success");
+          setModalOpen(true);
           setSubmitting(false);
           return;
         }
@@ -265,7 +272,11 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             ? myData.lastStartedAt.toDate().getTime() 
             : new Date(myData.lastStartedAt).getTime();
           
-          sessionSeconds = Math.floor((now.getTime() - startedTime) / 1000);
+          // 💡 今回の計測秒数を算出
+          const rawSeconds = Math.floor((now.getTime() - startedTime) / 1000);
+          
+          // 💡【分刻み切り捨て処理】秒数を60で割り、端数を切り捨ててから60を掛ける（例: 119秒 ➔ 60秒）
+          sessionSeconds = Math.floor(rawSeconds / 60) * 60;
           finalSeconds = Math.max(baseSeconds, baseSeconds + sessionSeconds);
         }
 
@@ -301,7 +312,11 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             ? myData.lastStartedAt.toDate().getTime() 
             : new Date(myData.lastStartedAt).getTime();
           
-          sessionSeconds = Math.floor((now.getTime() - startedTime) / 1000);
+          // 💡 今回の計測秒数を算出
+          const rawSeconds = Math.floor((now.getTime() - startedTime) / 1000);
+          
+          // 💡【分刻み切り捨て処理】秒数を60で割り、端数を切り捨ててから60を掛ける
+          sessionSeconds = Math.floor(rawSeconds / 60) * 60;
           finalSeconds = Math.max(baseSeconds, baseSeconds + sessionSeconds);
         }
 
@@ -350,7 +365,10 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       }
     } catch (e) {
       console.error(e);
-      alert("処理に失敗しました。");
+      setModalTitle("⚠️ 処理失敗");
+      setModalMessage("処理に失敗しました。ネットワーク状況をご確認ください。");
+      setModalActionType("save_success");
+      setModalOpen(true);
     } finally {
       setSubmitting(false);
       setModalActionType(null);
@@ -370,7 +388,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const currentAssignedCount = job.workers ? Object.keys(job.workers).length : 0;
   const workerLimit = job.workerLimit || 1;
 
-  // 💡【新設ロジック】自分以外の請負メンバーの中に、すでに「完了」した人がいるか自動チェック
+  // 自分以外の請負メンバーの中に、すでに「完了」した人がいるか自動チェック
   const otherWorkersUids = job.workers ? Object.keys(job.workers).filter(uid => uid !== currentUser?.uid) : [];
   const hasFinishedWorker = otherWorkersUids.some(uid => {
     const status = job.workers[uid]?.status;
@@ -603,7 +621,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                 </span>
               </div>
 
-              {/* 💡【新設機能】他の請負メンバーが先に完了報告を提出している場合のリアルタイムアラート表示 */}
+              {/* 他の請負メンバーが先に完了報告を提出している場合のリアルタイムアラート表示 */}
               {isMyJob && hasFinishedWorker && (myStatus === "assigned" || myStatus === "working" || myStatus === "paused") && (
                 <div className="bg-amber-50 border border-amber-300 p-2.5 rounded text-[11px] font-bold text-amber-800 flex items-start gap-1.5 shadow-sm animate-pulse select-none">
                   <span className="text-xs">💡</span>
