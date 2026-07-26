@@ -30,11 +30,11 @@ export default function WorkerDetailPage({ params }: WorkerDetailPageProps) {
         if (!wSnap.exists()) return;
         setWorker(wSnap.data());
 
-        // 2. 確定済みの累計稼働時間を算出（workerMonthlyStatusから）
-        const monthlySnap = await getDocs(query(collection(db, "workerMonthlyStatus"), where("workerId", "==", id), where("status", "==", "confirmed")));
+        // 💡【修正】確定データではなく「打刻ログ(workLogs)」からリアルタイムに累計稼働時間を算出
+        const logsSnap = await getDocs(query(collection(db, "workLogs"), where("workerId", "==", id)));
         let totalSec = 0;
-        monthlySnap.forEach(d => {
-          totalSec += (d.data().totalSeconds || 0);
+        logsSnap.forEach(d => {
+          totalSec += (Number(d.data().seconds) || 0);
         });
 
         // 3. 完了案件数と★評価の集計（jobsコレクションから）
@@ -176,7 +176,7 @@ export default function WorkerDetailPage({ params }: WorkerDetailPageProps) {
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-300 text-center">
             
             <div className="p-5 space-y-1 bg-blue-50/40">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">確定済みの累計稼働時間</span>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">リアルタイム累計稼働時間</span>
               <p className="text-2xl font-black text-[#0082C8] tracking-tight font-mono pt-1">
                 {formatHM(stats.totalSeconds)}
               </p>

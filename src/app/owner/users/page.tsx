@@ -12,7 +12,7 @@ export default function OwnerWorkersPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 💡【新機能】ワーカーごとの3軸集計データ（時間・件数・平均評価・ランク）を保管するマップ
+  // ワーカーごとの3軸集計データ（時間・件数・平均評価・ランク）を保管するマップ
   const [workerStatsMap, setWorkerStatsMap] = useState<{ [key: string]: any }>({});
 
   // 大分類タブを管理するステート ('directory': 登録状況 / 'calendar': カレンダー状況)
@@ -88,7 +88,7 @@ export default function OwnerWorkersPage() {
     });
   };
 
-  // 💡【改良されたロジック】確定データではなく打刻データ(workLogs)からリアルタイムに作業時間を合算
+  // 打刻ログ(workLogs)からリアルタイムに作業時間を合算して集計
   const fetchAllUsersAndStats = async () => {
     if (!owner) return;
     setLoading(true);
@@ -357,13 +357,21 @@ export default function OwnerWorkersPage() {
                             <td className="p-3 border-r border-slate-200">
                               <span className="bg-rose-50 text-rose-700 border border-rose-300 px-2 py-0.5 text-[10px] font-black rounded block text-center uppercase">オーナー</span>
                             </td>
+
+                            {/* 💡【改良】名前をクリックして直接詳細画面へ飛べるようにリンク化 */}
                             <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>
-                              {fullName} {isMe && <span className="text-[10px] text-slate-400 font-normal">（あなた）</span>}
+                              <Link 
+                                href={`/owner/users/${u.id}`} 
+                                className="text-slate-900 hover:text-[#0082C8] hover:underline transition-colors block truncate cursor-pointer"
+                              >
+                                {fullName} {isMe && <span className="text-[10px] text-slate-400 font-normal">（あなた）</span>}
+                              </Link>
                             </td>
+
                             <td className="p-3 border-r border-slate-200 text-slate-600 font-mono truncate" title={u.email}>{u.email}</td>
                             <td className="p-3 border-r border-slate-200 text-slate-500 truncate">{u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString() : "-"}</td>
                             <td className="p-3 text-center flex items-center justify-center gap-3">
-                              <Link href={`/owner/users/${u.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">詳細 →</Link>
+                              <Link href={`/owner/users/${u.id}`} className="text-[#0082C8] hover:underline font-black text-[11px] cursor-pointer">詳細 →</Link>
                               {!isMe ? (
                                 <button onClick={() => triggerDeleteModal(u.id, fullName)} className="text-slate-300 hover:text-rose-600 transition-colors p-1 cursor-pointer" title="削除">🗑️</button>
                               ) : <div className="w-5" />}
@@ -377,7 +385,7 @@ export default function OwnerWorkersPage() {
               </div>
             </div>
 
-            {/* 💡【更新】作業者（ワーカー）アカウント台帳：リアルタイム累計時間を表示 */}
+            {/* 作業者（ワーカー）アカウント台帳 */}
             <div className="space-y-2 pt-2">
               <div className="flex items-center gap-2 px-1">
                 <span className="text-xs font-black px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-300 rounded uppercase">WORKER DIRECTORY</span>
@@ -416,8 +424,14 @@ export default function OwnerWorkersPage() {
                               <span className="bg-blue-50 text-blue-700 border border-blue-300 px-2 py-0.5 text-[10px] font-black rounded block text-center uppercase">ワーカー</span>
                             </td>
                             
+                            {/* 💡【改良】名前をクリックして直接詳細画面へ飛べるようにリンク化 */}
                             <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>
-                              {fullName}
+                              <Link 
+                                href={`/owner/users/${u.id}`} 
+                                className="text-slate-900 hover:text-[#0082C8] hover:underline transition-colors block truncate cursor-pointer font-black"
+                              >
+                                {fullName}
+                              </Link>
                             </td>
 
                             {/* 現在のランクバッジ */}
@@ -427,7 +441,7 @@ export default function OwnerWorkersPage() {
                               </span>
                             </td>
 
-                            {/* 💡【更新】全打刻からリアルタイム計算された累計時間 */}
+                            {/* リアルタイム累計時間 */}
                             <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-[#0082C8] bg-blue-50/20">
                               {formatHM(stats.totalSeconds)}
                             </td>
@@ -437,7 +451,7 @@ export default function OwnerWorkersPage() {
                               {stats.completedCount} <span className="text-[10px] font-normal text-slate-400">件</span>
                             </td>
 
-                            {/* 平均社内★評価（ワーカー非公開データ） */}
+                            {/* 平均社内★評価 */}
                             <td className="p-3 border-r border-slate-200 text-center font-mono font-black">
                               {stats.avgRating !== "-" ? (
                                 <span className="bg-amber-50 text-amber-900 border border-amber-300 px-2 py-0.5 rounded text-xs">
@@ -560,7 +574,14 @@ export default function OwnerWorkersPage() {
                       return (
                         <tr key={worker.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="p-3 border-r border-slate-200 font-bold text-slate-900 bg-white sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                            <div className="truncate" title={fullName}>{fullName}</div>
+                            {/* 💡【改良】カレンダー側でも名前をクリックして詳細へ飛べるように修正 */}
+                            <Link 
+                              href={`/owner/users/${worker.id}`} 
+                              className="text-slate-900 hover:text-[#0082C8] hover:underline block truncate cursor-pointer font-bold"
+                              title={fullName}
+                            >
+                              {fullName}
+                            </Link>
                             <div className="text-[9px] text-slate-400 font-mono font-normal truncate mt-0.5">{worker.email}</div>
                           </td>
 
