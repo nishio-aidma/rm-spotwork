@@ -26,6 +26,9 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [workerComment, setWorkerComment] = useState("");
   const [isSavingComment, setIsSavingComment] = useState(false);
 
+  // 💡【新機能】実際に作業した「件数（成果量）」を管理するステート
+  const [completedCountInput, setCompletedCountInput] = useState<number | "">(0);
+
   // カスタムポップアップ（モーダル）用の管理ステート
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
@@ -47,8 +50,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           if (snap.exists()) {
             const data = snap.data() as any;
             
-            // 💡【過去データの救済処置】もし過去に作られた「古い1人専用の案件」だった場合、
-            // 画面のメモリ上で自動的に複数人用のデータ構造に形を変換して、システムが壊れるのを防ぎます。
+            // 💡【過去データの救済処置】
             let processedJob = { id: snap.id, ...data };
             if (data.workerId && !data.workers) {
               processedJob.workers = {
@@ -57,6 +59,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                   totalAccumulatedSeconds: data.totalAccumulatedSeconds || 0,
                   lastStartedAt: data.lastStartedAt || null,
                   workerComment: data.workerComment || "",
+                  completedCount: data.completedCount || 0,
                   submittedAt: data.submittedAt || null
                 }
               };
@@ -64,9 +67,10 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             
             setJob(processedJob);
             
-            // ログインしている「あなた（自分自身）」専用の枠から、保存済みのメモを復元します
+            // ログインしている「あなた（自分自身）」専用の枠から、保存済みのメモと件数を復元します
             if (processedJob.workers?.[user.uid]) {
               setWorkerComment(processedJob.workers[user.uid].workerComment || "");
+              setCompletedCountInput(processedJob.workers[user.uid].completedCount || 0);
             }
           }
 
@@ -133,16 +137,18 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     }
   };
 
-  // テキストエリアの内容をワーカー個別のカルテ領域へ一時保存する関数
+  // テキストエリアの内容と作業件数をワーカー個別のカルテ領域へ一時保存する関数
   const handleSaveComment = async () => {
     if (!job || !currentUser) return;
     setIsSavingComment(true);
     try {
       const jobRef = doc(db, "jobs", job.id);
+      const countVal = Number(completedCountInput) || 0;
       
-      // 💡 案件の全体メモではなく、自分専用のカルテ（workers > 自分のID > workerComment）を狙い撃ちで保存します
+      // 自分専用のカルテ（workers > 自分のID）にメモと件数を保存
       await updateDoc(jobRef, {
         [`workers.${currentUser.uid}.workerComment`]: workerComment,
+        [`workers.${currentUser.uid}.completedCount`]: countVal,
         updatedAt: serverTimestamp()
       });
 
@@ -152,17 +158,17 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           ...prev.workers,
           [currentUser.uid]: {
             ...prev.workers?.[currentUser.uid],
-            workerComment: workerComment
+            workerComment: workerComment,
+            completedCount: countVal
           }
         }
       }));
       
       triggerModal("save_success");
     } catch (e) {
-      console.error("コメントの一時保存に失敗しました:", e);
-      // Windows標準のalertは不使用（モーダル画面を実装）
+      console.error("コメント・件数の一時保存に失敗しました:", e);
       setModalTitle("⚠️ エラー");
-      setModalMessage("コメントの保存に失敗しました。時間をおいて再度お試しください。");
+      setModalMessage("一時保存に失敗しました。時間をおいて再度お試しください。");
       setModalActionType("save_success");
       setModalOpen(true);
     } finally {
@@ -183,12 +189,13 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       setModalTitle("⏸️ 作業を一時中断する");
       setModalMessage("休憩や中断のため、タイマーを停止しますか？\n※計測された時間は分刻み（端数切り捨て）で集計され、実績に合算保存されます。");
     } else if (type === "complete") {
+      const currentCountVal = Number(completedCountInput) || 0;
       setModalTitle("🏁 完了報告を提出する");
-      setModalMessage("本日の作業をすべて終了し、オーナーへ提出しますか？\n\n※あなた以外の受託メンバーが全員完了報告を出し終えた時点で、案件全体が自動的に『検収待ち』状態へと移行します。");
+      setModalMessage(`本日の作業をすべて終了し、オーナーへ提出しますか？\n\n【今回提出する実績件数】: ${currentCountVal} 件\n\n※あなた以外の受託メンバーが全員完了報告を出し終えた時点で、案件全体が自動的に『検収待ち』状態へと移行します。`);
     }
     else if (type === "save_success") {
-      setModalTitle("✨ メモ一時保存完了");
-      setModalMessage("報告コメント・作業メモをあなた専用のデータ枠へ安全に一時保存しました！\n\nこの内容はいつでも書き換え可能で、『作業を完了する』ボタンを押した際に最終実績としてオーナーへ自動提出されます。");
+      setModalTitle("✨ 一時保存完了");
+      setModalMessage("報告コメントおよび作業件数をあなた専用のデータ枠へ安全に一時保存しました！\n\nこの内容はいつでも書き換え可能で、『作業を完了する』ボタンを押した際に最終実績としてオーナーへ自動提出されます。");
     }
     setModalOpen(true);
   };
@@ -208,6 +215,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
         totalAccumulatedSeconds: 0,
         lastStartedAt: null,
         workerComment: "",
+        completedCount: 0,
         submittedAt: null
       };
 
@@ -235,6 +243,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             totalAccumulatedSeconds: 0,
             lastStartedAt: null,
             workerComment: "",
+            completedCount: 0,
             assignedAt: new Date()
           },
           workerId: job.workerId || currentUser.uid,
@@ -272,10 +281,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             ? myData.lastStartedAt.toDate().getTime() 
             : new Date(myData.lastStartedAt).getTime();
           
-          // 💡 今回の計測秒数を算出
           const rawSeconds = Math.floor((now.getTime() - startedTime) / 1000);
-          
-          // 💡【分刻み切り捨て処理】秒数を60で割り、端数を切り捨ててから60を掛ける（例: 119秒 ➔ 60秒）
           sessionSeconds = Math.floor(rawSeconds / 60) * 60;
           finalSeconds = Math.max(baseSeconds, baseSeconds + sessionSeconds);
         }
@@ -312,10 +318,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             ? myData.lastStartedAt.toDate().getTime() 
             : new Date(myData.lastStartedAt).getTime();
           
-          // 💡 今回の計測秒数を算出
           const rawSeconds = Math.floor((now.getTime() - startedTime) / 1000);
-          
-          // 💡【分刻み切り捨て処理】秒数を60で割り、端数を切り捨ててから60を掛ける
           sessionSeconds = Math.floor(rawSeconds / 60) * 60;
           finalSeconds = Math.max(baseSeconds, baseSeconds + sessionSeconds);
         }
@@ -335,10 +338,13 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           finalJobStatus = isFull ? "working" : "open";
         }
 
+        const countVal = Number(completedCountInput) || 0;
+
         const updateData: any = {
           [`workers.${currentUser.uid}.status`]: "review",
           [`workers.${currentUser.uid}.totalAccumulatedSeconds`]: finalSeconds,
           [`workers.${currentUser.uid}.workerComment`]: workerComment, 
+          [`workers.${currentUser.uid}.completedCount`]: countVal, // 💡 実績件数を確定保存
           [`workers.${currentUser.uid}.submittedAt`]: serverTimestamp(),
           status: finalJobStatus, 
           updatedAt: serverTimestamp()
@@ -388,7 +394,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const currentAssignedCount = job.workers ? Object.keys(job.workers).length : 0;
   const workerLimit = job.workerLimit || 1;
 
-  // 自分以外の請負メンバーの中に、すでに「完了」した人がいるか自動チェック
   const otherWorkersUids = job.workers ? Object.keys(job.workers).filter(uid => uid !== currentUser?.uid) : [];
   const hasFinishedWorker = otherWorkersUids.some(uid => {
     const status = job.workers[uid]?.status;
@@ -571,32 +576,56 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </div>
           )}
 
-          {/* 報告コメント / 作業メモ入力 */}
+          {/* 報告コメント / 作業実績件数入力 */}
           {isMyJob && (
-            <div className="bg-emerald-50/30 border-2 border-emerald-400/60 rounded p-4 space-y-2.5 shadow-md transition-all animate-fade-in">
+            <div className="bg-emerald-50/30 border-2 border-emerald-400/60 rounded p-4 space-y-3.5 shadow-md transition-all animate-fade-in">
               <h2 className="text-xs font-black text-emerald-950 uppercase tracking-wider border-l-4 border-[#5CA685] pl-2 flex items-center gap-1.5 select-none">
-                💬 報告コメント / 作業メモ入力
+                💬 実績報告 / 作業メモ入力
               </h2>
-              <p className="text-[10px] text-emerald-800/80 font-bold leading-relaxed select-none">
-                ※作業中に気づいた点やオーナーへの引き継ぎ内容をいつでも自由にメモ・一時保存できます。ここに書いた内容は、右の「作業を完了する」ボタンを押したときに最終実績として自動提出されます。
-              </p>
-              <textarea
-                value={workerComment}
-                onChange={(e) => setWorkerComment(e.target.value)}
-                disabled={myStatus === "review" || myStatus === "completed"}
-                placeholder="例：50件目までフォーム送信完了しました。一部のアドレスがエラーだったため、SC上でスキップ処理を入れています。稼働ログに残らない特記事項など、自由にメモにご活用ください！"
-                rows={4}
-                className="w-full border-2 border-emerald-200 rounded p-2.5 text-xs font-bold outline-none focus:border-[#5CA685] focus:ring-2 focus:ring-emerald-100 bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500 resize-y shadow-inner transition-all"
-              />
+              
+              {/* 💡【新設】実際にこなした実績件数の入力フォーム */}
+              <div className="bg-white p-3 rounded border-2 border-emerald-200/80 space-y-1.5 shadow-xs">
+                <label className="text-[11px] font-black text-slate-800 flex items-center justify-between">
+                  <span>📊 今回完了した実際の作業件数</span>
+                  <span className="text-[10px] font-normal text-slate-400">（予定: {job.count || 0} 件）</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    value={completedCountInput}
+                    onChange={(e) => setCompletedCountInput(e.target.value === "" ? "" : Number(e.target.value))}
+                    disabled={myStatus === "review" || myStatus === "completed"}
+                    placeholder="例: 50"
+                    className="w-36 border-2 border-slate-300 rounded px-3 py-1.5 text-sm font-mono font-black text-slate-900 outline-none focus:border-[#5CA685] disabled:bg-slate-100 disabled:text-slate-500"
+                  />
+                  <span className="text-xs font-black text-slate-700">件</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-[10px] text-emerald-800/80 font-bold leading-relaxed select-none">
+                  ※作業中に気づいた点やオーナーへの引き継ぎ内容を自由にメモ・一時保存できます。右の「作業を完了する」ボタンを押した際に件数とメモが自動提出されます。
+                </p>
+                <textarea
+                  value={workerComment}
+                  onChange={(e) => setWorkerComment(e.target.value)}
+                  disabled={myStatus === "review" || myStatus === "completed"}
+                  placeholder="例：50件目までフォーム送信完了しました。一部のアドレスがエラーだったため、SC上でスキップ処理を入れています。"
+                  rows={4}
+                  className="w-full border-2 border-emerald-200 rounded p-2.5 text-xs font-bold outline-none focus:border-[#5CA685] focus:ring-2 focus:ring-emerald-100 bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500 resize-y shadow-inner transition-all"
+                />
+              </div>
+
               {(myStatus === "assigned" || myStatus === "working" || myStatus === "paused") && (
                 <div className="flex justify-end pt-0.5">
                   <button
                     type="button"
                     onClick={handleSaveComment}
                     disabled={isSavingComment}
-                    className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-4 py-2 rounded border border-black/10 shadow-md transition-all active:scale-95 disabled:opacity-50"
+                    className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-4 py-2 rounded border border-black/10 shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                   >
-                    {isSavingComment ? "保存中..." : "💾 コメントを一時保存する"}
+                    {isSavingComment ? "保存中..." : "💾 件数とコメントを一時保存する"}
                   </button>
                 </div>
               )}
@@ -667,7 +696,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                   <button 
                     type="button" 
                     onClick={handleToggleWish}
-                    className={`w-full py-2.5 text-xs font-black rounded border-2 transition-colors ${
+                    className={`w-full py-2.5 text-xs font-black rounded border-2 transition-colors cursor-pointer ${
                       isWished ? 'bg-amber-400 text-slate-900 border-transparent' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'
                     }`}
                   >
@@ -680,7 +709,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                     type="button" 
                     onClick={() => triggerModal("accept")}
                     disabled={submitting || currentAssignedCount >= workerLimit}
-                    className="w-full py-3 bg-[#5CA685] hover:bg-[#4A9272] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full py-3 bg-[#5CA685] hover:bg-[#4A9272] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {currentAssignedCount >= workerLimit ? '❌ 定員に達したため締め切られました' : 'この案件を引き受ける'}
                   </button>
@@ -691,7 +720,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                         type="button" 
                         onClick={() => triggerModal("start")}
                         disabled={submitting}
-                        className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm"
+                        className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm cursor-pointer"
                       >
                         ⏱️ 作業を開始する
                       </button>
@@ -702,7 +731,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                         type="button" 
                         onClick={() => triggerModal("start")}
                         disabled={submitting}
-                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm"
+                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm cursor-pointer"
                       >
                         ▶️ 作業を再開する
                       </button>
@@ -714,7 +743,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                           type="button" 
                           onClick={() => triggerModal("pause")}
                           disabled={submitting}
-                          className="w-full py-3 bg-slate-200 hover:bg-slate-300 border-2 border-slate-400 text-slate-700 text-xs font-black rounded transition-colors"
+                          className="w-full py-3 bg-slate-200 hover:bg-slate-300 border-2 border-slate-400 text-slate-700 text-xs font-black rounded transition-colors cursor-pointer"
                         >
                           ⏸️ 一時停止する
                         </button>
@@ -722,7 +751,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                           type="button" 
                           onClick={() => triggerModal("complete")}
                           disabled={submitting}
-                          className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-md"
+                          className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded border border-black/10 transition-colors shadow-md cursor-pointer"
                         >
                           🏁 作業を完了する
                         </button>
@@ -764,7 +793,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                 <button
                   type="button"
                   onClick={() => { setModalOpen(false); setModalActionType(null); }}
-                  className="px-6 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                  className="px-6 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm cursor-pointer"
                 >
                   OK
                 </button>
@@ -773,14 +802,14 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                   <button
                     type="button"
                     onClick={() => setModalOpen(false)}
-                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
+                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide cursor-pointer"
                   >
                     いいえ
                   </button>
                   <button
                     type="button"
                     onClick={handleModalConfirm}
-                    className="px-4 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                    className="px-4 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm cursor-pointer"
                   >
                     はい、実行する
                   </button>

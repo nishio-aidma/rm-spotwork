@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { collection, getDocs, doc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, deleteDoc, query, where } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import OwnerShell from "@/components/OwnerShell";
-import Link from "next/link"; // 💡 "next/navigation" から "next/link" へ修正完了！
+import Link from "next/link";
 
 export default function OwnerWorkersPage() {
   const { user: owner, loading: authLoading } = useRequireAuth("owner");
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 💡【新機能】ワーカーごとの3軸集計データ（時間・件数・平均評価・ランク）を保管するマップ
+  const [workerStatsMap, setWorkerStatsMap] = useState<{ [key: string]: any }>({});
 
   // 大分類タブを管理するステート ('directory': 登録状況 / 'calendar': カレンダー状況)
   const [activeTab, setActiveTab] = useState<'directory' | 'calendar'>('directory');
@@ -22,14 +25,29 @@ export default function OwnerWorkersPage() {
   const [realCalendarEvents, setRealCalendarEvents] = useState<any[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
 
+  // カスタム削除確認モーダル用のステート
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [targetUser, setTargetUser] = useState<{ id: string; name: string } | null>(null);
+
+  // カスタム通知モーダル用のステート
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [infoModalTitle, setInfoModalTitle] = useState("");
+  const [infoModalMessage, setInfoModalMessage] = useState("");
+
   // 横スクロールするテーブルの親コンテナを直撃制御するRef
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const showNotification = (title: string, msg: string) => {
+    setInfoModalTitle(title);
+    setInfoModalMessage(msg);
+    setInfoModalOpen(true);
+  };
 
   // 選択された基準月（viewDate）の「1日」から「末日」までの全日付を配列として動的に自動生成
   const getDaysInMonthArray = (targetDate: Date) => {
     const days = [];
     const year = targetDate.getFullYear();
-    const month = targetDate.getMonth(); // 0-11
+    const month = targetDate.getMonth();
     
     const totalDays = new Date(year, month + 1, 0).getDate();
     const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
@@ -54,7 +72,6 @@ export default function OwnerWorkersPage() {
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + diff, 1));
   };
 
-  // 本日カラムの位置を計算し、画面の中央左寄りにスッ…と滑らかに自動スクロールさせる関数
   const scrollToToday = () => {
     if (!scrollContainerRef.current) return;
     
@@ -71,12 +88,14 @@ export default function OwnerWorkersPage() {
     });
   };
 
-  const fetchAllUsers = async () => {
+  // 💡【新ロジック】ユーザー一覧の取得と同時に、ワーカーごとの「時間・件数・平均評価・ランク」を全自動一括計算
+  const fetchAllUsersAndStats = async () => {
     if (!owner) return;
     setLoading(true);
     try {
-      const snap = await getDocs(collection(db, "users"));
-      const userList = snap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
+      // 1. ユーザー一覧を取得
+      const userSnap = await getDocs(collection(db, "users"));
+      const userList = userSnap.docs.map(d => ({ id: d.id, ...d.data() }) as any);
       
       userList.sort((a: any, b: any) => {
         const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
@@ -84,9 +103,84 @@ export default function OwnerWorkersPage() {
         return timeB - timeA;
       });
 
+      // 2. 月次確定ステータスを取得（確定済みの累計稼働時間を算出するため）
+      const monthlySnap = await getDocs(collection(db, "workerMonthlyStatus"));
+      const secondsMap: { [key: string]: number } = {};
+      
+      monthlySnap.forEach(d => {
+        const mData = d.data();
+        if (mData.status === "confirmed" && mData.workerId) {
+          secondsMap[mData.workerId] = (secondsMap[mData.workerId] || 0) + (mData.totalSeconds || 0);
+        }
+      });
+
+      // 3. 全案件データを取得（件数および社内★評価を集計するため）
+      const jobsSnap = await getDocs(collection(db, "jobs"));
+      const countMap: { [key: string]: number } = {};
+      const ratingSumMap: { [key: string]: number } = {};
+      const ratingCountMap: { [key: string]: number } = {};
+
+      jobsSnap.forEach(d => {
+        const jData = d.data();
+        if (jData.workers) {
+          Object.keys(jData.workers).forEach(wUid => {
+            const wInfo = jData.workers[wUid];
+            
+            // 実績件数の加算
+            if (wInfo.completedCount) {
+              countMap[wUid] = (countMap[wUid] || 0) + Number(wInfo.completedCount || 0);
+            }
+            
+            // ★評価の加算
+            if (wInfo.rating && Number(wInfo.rating) > 0) {
+              ratingSumMap[wUid] = (ratingSumMap[wUid] || 0) + Number(wInfo.rating);
+              ratingCountMap[wUid] = (ratingCountMap[wUid] || 0) + 1;
+            }
+          });
+        }
+      });
+
+      // 4. ワーカーごとの完全集計マップを合成
+      const statsMap: { [key: string]: any } = {};
+      userList.forEach(u => {
+        const totalSec = secondsMap[u.id] || 0;
+        const totalHours = Math.floor(totalSec / 3600);
+        
+        // ランク判定
+        let rank = "ROOKIE";
+        let rankBadge = "🔥 ROOKIE";
+        let rankColor = "bg-[#0082C8] text-white";
+
+        if (totalHours >= 100) {
+          rank = "PLATINUM"; rankBadge = "👑 PLATINUM"; rankColor = "bg-slate-800 text-slate-100";
+        } else if (totalHours >= 50) {
+          rank = "GOLD"; rankBadge = "🥇 GOLD"; rankColor = "bg-yellow-500 text-yellow-50";
+        } else if (totalHours >= 30) {
+          rank = "SILVER"; rankBadge = "🥈 SILVER"; rankColor = "bg-slate-400 text-white";
+        } else if (totalHours >= 10) {
+          rank = "BRONZE"; rankBadge = "🥉 BRONZE"; rankColor = "bg-orange-700 text-orange-50";
+        }
+
+        // 平均★評価の算出
+        const rSum = ratingSumMap[u.id] || 0;
+        const rCount = ratingCountMap[u.id] || 0;
+        const avgRating = rCount > 0 ? (rSum / rCount).toFixed(1) : "-";
+
+        statsMap[u.id] = {
+          totalSeconds: totalSec,
+          totalHours,
+          completedCount: countMap[u.id] || 0,
+          avgRating,
+          rank,
+          rankBadge,
+          rankColor
+        };
+      });
+
       setUsers(userList);
+      setWorkerStatsMap(statsMap);
     } catch (e) {
-      console.error("Error fetching users:", e);
+      console.error("Error fetching users and stats:", e);
     } finally {
       setLoading(false);
     }
@@ -127,7 +221,7 @@ export default function OwnerWorkersPage() {
   };
 
   useEffect(() => {
-    if (!authLoading) fetchAllUsers();
+    if (!authLoading) fetchAllUsersAndStats();
   }, [owner, authLoading]);
 
   useEffect(() => {
@@ -137,7 +231,6 @@ export default function OwnerWorkersPage() {
     }
   }, [activeTab, users, viewDate]);
 
-  // カレンダーのローディングが終了した瞬間に、自動で本日位置へ優しくジャンプ
   useEffect(() => {
     if (!calendarLoading && activeTab === 'calendar') {
       const timer = setTimeout(() => {
@@ -147,23 +240,38 @@ export default function OwnerWorkersPage() {
     }
   }, [calendarLoading, activeTab]);
 
-  const handleDeleteUser = async (userId: string, userName: string) => {
+  // 削除モーダルの起動
+  const triggerDeleteModal = (userId: string, userName: string) => {
     if (userId === auth.currentUser?.uid) {
-      alert("現在ログイン中のご自身のアカウントは削除できません。");
+      showNotification("🔒 操作不可", "現在ログイン中のご自身のアカウントは削除できません。");
       return;
     }
+    setTargetUser({ id: userId, name: userName });
+    setDeleteModalOpen(true);
+  };
 
-    const ok = window.confirm(`【警告】このスタッフアカウントを完全に削除しますか？\n\n対象：${userName}\n※この操作は取り消せません。`);
-    if (!ok) return;
+  // アカウント削除確定処理
+  const handleConfirmDeleteUser = async () => {
+    if (!targetUser) return;
+    setDeleteModalOpen(false);
 
     try {
-      await deleteDoc(doc(db, "users", userId));
-      setUsers(prev => prev.filter(u => u.id !== userId));
-      alert("アカウントを完全に削除しました。");
+      await deleteDoc(doc(db, "users", targetUser.id));
+      setUsers(prev => prev.filter(u => u.id !== targetUser.id));
+      showNotification("🗑️ 削除完了", `【${targetUser.name}】さんのアカウントを削除しました。`);
     } catch (e) {
       console.error(e);
-      alert("削除処理に失敗しました。");
+      showNotification("⚠️ エラー", "削除処理に失敗しました。");
+    } finally {
+      setTargetUser(null);
     }
+  };
+
+  // 秒数を「〇h 〇m」表記に綺麗に変換するヘルパー関数
+  const formatHM = (totalSeconds: number) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    return `${h}h ${m}m`;
   };
 
   if (authLoading || loading) return <OwnerShell title="アカウント管理"><div className="p-10 text-center text-slate-400 text-xs font-bold">アカウント台帳を照合中...</div></OwnerShell>;
@@ -172,10 +280,10 @@ export default function OwnerWorkersPage() {
   const workers = users.filter((u: any) => u.role !== 'owner');
 
   return (
-    <OwnerShell title="アカウント管理" subTitle="登録スタッフ（オーナー／ワーカー）の登録状況一覧">
+    <OwnerShell title="アカウント管理" subTitle="登録スタッフの稼働実績・評価・Shift状況の一元管理">
       <div className="max-w-full mx-auto space-y-4 pb-20 text-slate-900 font-sans antialiased">
         
-        {/* 1. 上部カウンターパネル ＆ タブコントロール */}
+        {/* 上部カウンターパネル ＆ タブコントロール */}
         <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4 flex-wrap text-xs">
             <div className="text-sm font-black text-slate-700 min-w-[120px]">
@@ -186,7 +294,7 @@ export default function OwnerWorkersPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('directory')}
-                className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'directory'
                     ? 'bg-[#0082C8] text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
@@ -197,7 +305,7 @@ export default function OwnerWorkersPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('calendar')}
-                className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'calendar'
                     ? 'bg-indigo-600 text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
@@ -211,7 +319,7 @@ export default function OwnerWorkersPage() {
 
           <Link 
             href="/owner/users/new"
-            className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded border border-black/10 transition-colors shadow-sm text-center whitespace-nowrap self-start sm:self-auto"
+            className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded border border-black/10 transition-colors shadow-sm text-center whitespace-nowrap self-start sm:self-auto cursor-pointer"
           >
             ➕ 新規スタッフを登録する
           </Link>
@@ -257,7 +365,7 @@ export default function OwnerWorkersPage() {
                             <td className="p-3 text-center flex items-center justify-center gap-3">
                               <Link href={`/owner/users/${u.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">詳細 →</Link>
                               {!isMe ? (
-                                <button onClick={() => handleDeleteUser(u.id, fullName)} className="text-slate-300 hover:text-rose-600 transition-colors p-1" title="削除">🗑️</button>
+                                <button onClick={() => triggerDeleteModal(u.id, fullName)} className="text-slate-300 hover:text-rose-600 transition-colors p-1 cursor-pointer" title="削除">🗑️</button>
                               ) : <div className="w-5" />}
                             </td>
                           </tr>
@@ -269,7 +377,7 @@ export default function OwnerWorkersPage() {
               </div>
             </div>
 
-            {/* ワーカーアカウント台帳 */}
+            {/* 💡【新機能拡張】作業者（ワーカー）アカウント台帳：時間・量・★評価・ランクを表示 */}
             <div className="space-y-2 pt-2">
               <div className="flex items-center gap-2 px-1">
                 <span className="text-xs font-black px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-300 rounded uppercase">WORKER DIRECTORY</span>
@@ -278,30 +386,75 @@ export default function OwnerWorkersPage() {
 
               <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse table-fixed min-w-[800px]">
+                  <table className="w-full text-left border-collapse table-fixed min-w-[1050px]">
                     <thead className="bg-slate-100 border-b-2 border-slate-300 text-xs text-slate-700 font-black">
                       <tr>
-                        <th className="p-3 border-r border-slate-300 w-28 text-center">権限区分</th>
-                        <th className="p-3 border-r border-slate-300 w-48">スタッフ氏名</th>
-                        <th className="p-3 border-r border-slate-300">連絡先（メールアドレス）</th>
-                        <th className="p-3 border-r border-slate-300 w-44">システム登録日</th>
+                        <th className="p-3 border-r border-slate-300 w-24 text-center">区分</th>
+                        <th className="p-3 border-r border-slate-300 w-40">スタッフ氏名</th>
+                        <th className="p-3 border-r border-slate-300 w-32 text-center">ランク</th>
+                        <th className="p-3 border-r border-slate-300 w-32 text-right">確定累計時間</th>
+                        <th className="p-3 border-r border-slate-300 w-28 text-right">累計件数</th>
+                        <th className="p-3 border-r border-slate-300 w-28 text-center">平均社内評価</th>
+                        <th className="p-3 border-r border-slate-300">連絡先（メール）</th>
                         <th className="p-3 w-28 text-center">操作</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-xs text-slate-800 font-medium">
                       {workers.map((u) => {
                         const fullName = `${u.lastName || ""} ${u.firstName || u.name || "不明"}`;
+                        const stats = workerStatsMap[u.id] || {
+                          totalSeconds: 0,
+                          completedCount: 0,
+                          avgRating: "-",
+                          rankBadge: "🔥 ROOKIE",
+                          rankColor: "bg-[#0082C8] text-white"
+                        };
+
                         return (
                           <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                             <td className="p-3 border-r border-slate-200">
                               <span className="bg-blue-50 text-blue-700 border border-blue-300 px-2 py-0.5 text-[10px] font-black rounded block text-center uppercase">ワーカー</span>
                             </td>
-                            <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>{fullName}</td>
-                            <td className="p-3 border-r border-slate-200 text-slate-600 font-mono truncate" title={u.email}>{u.email}</td>
-                            <td className="p-3 border-r border-slate-200 text-slate-500 truncate">{u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString() : "-"}</td>
+                            
+                            <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>
+                              {fullName}
+                            </td>
+
+                            {/* 💡【新表示】現在のランクバッジ */}
+                            <td className="p-3 border-r border-slate-200 text-center">
+                              <span className={`px-2 py-0.5 text-[10px] font-black rounded inline-block shadow-2xs ${stats.rankColor}`}>
+                                {stats.rankBadge}
+                              </span>
+                            </td>
+
+                            {/* 💡【新表示】確定累計時間 */}
+                            <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-[#0082C8] bg-blue-50/20">
+                              {formatHM(stats.totalSeconds)}
+                            </td>
+
+                            {/* 💡【新表示】累計こなした件数 */}
+                            <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-xs text-slate-800">
+                              {stats.completedCount} <span className="text-[10px] font-normal text-slate-400">件</span>
+                            </td>
+
+                            {/* 💡【新表示】平均社内★評価（ワーカー非公開データ） */}
+                            <td className="p-3 border-r border-slate-200 text-center font-mono font-black">
+                              {stats.avgRating !== "-" ? (
+                                <span className="bg-amber-50 text-amber-900 border border-amber-300 px-2 py-0.5 rounded text-xs">
+                                  ⭐ {stats.avgRating}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 text-xs italic font-normal">-</span>
+                              )}
+                            </td>
+
+                            <td className="p-3 border-r border-slate-200 text-slate-600 font-mono truncate" title={u.email}>
+                              {u.email}
+                            </td>
+
                             <td className="p-3 text-center flex items-center justify-center gap-3">
-                              <Link href={`/owner/users/${u.id}`} className="text-[#0082C8] hover:underline font-black text-[11px]">詳細 →</Link>
-                              <button onClick={() => handleDeleteUser(u.id, fullName)} className="text-slate-300 hover:text-rose-600 transition-colors p-1" title="削除">🗑️</button>
+                              <Link href={`/owner/users/${u.id}`} className="text-[#0082C8] hover:underline font-black text-[11px] cursor-pointer">詳細 →</Link>
+                              <button onClick={() => triggerDeleteModal(u.id, fullName)} className="text-slate-300 hover:text-rose-600 transition-colors p-1 cursor-pointer" title="削除">🗑️</button>
                             </td>
                           </tr>
                         );
@@ -326,7 +479,7 @@ export default function OwnerWorkersPage() {
               <div className="flex items-center gap-2">
                 <button 
                   onClick={() => changeMonth(-1)} 
-                  className="w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-white font-black transition-colors"
+                  className="w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-white font-black transition-colors cursor-pointer"
                 >
                   〈
                 </button>
@@ -335,7 +488,7 @@ export default function OwnerWorkersPage() {
                 </h4>
                 <button 
                   onClick={() => changeMonth(1)} 
-                  className="w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-white font-black transition-colors"
+                  className="w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-white font-black transition-colors cursor-pointer"
                 >
                   〉
                 </button>
@@ -352,7 +505,7 @@ export default function OwnerWorkersPage() {
                       scrollToToday();
                     }
                   }}
-                  className="text-[11px] font-black text-amber-400 hover:underline uppercase tracking-tight"
+                  className="text-[11px] font-black text-amber-400 hover:underline uppercase tracking-tight cursor-pointer"
                 >
                   📅 当日位置へ移動
                 </button>
@@ -360,7 +513,7 @@ export default function OwnerWorkersPage() {
                 <button
                   type="button"
                   onClick={() => setViewDate(new Date())}
-                  className="text-[11px] font-black text-[#0082C8] hover:underline uppercase tracking-tight"
+                  className="text-[11px] font-black text-[#0082C8] hover:underline uppercase tracking-tight cursor-pointer"
                 >
                   今月（当月）へ戻る
                 </button>
@@ -462,6 +615,64 @@ export default function OwnerWorkersPage() {
         )}
 
       </div>
+
+      {/* カスタム削除確認モーダル */}
+      {deleteModalOpen && targetUser && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            <div className="bg-rose-600 text-white px-4 py-3 font-black text-xs select-none">
+              <span>⚠️ アカウント削除の確認</span>
+            </div>
+            <div className="p-6 bg-white">
+              <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                【{targetUser.name}】さんのアカウントを削除しますか？{"\n\n"}※この操作は取り消せません。
+              </p>
+            </div>
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setDeleteModalOpen(false); setTargetUser(null); }}
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteUser}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded shadow-sm transition-colors cursor-pointer"
+              >
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* カスタム通知モーダル */}
+      {infoModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs select-none">
+              <span>{infoModalTitle}</span>
+            </div>
+            <div className="p-6 bg-white">
+              <p className="text-xs font-bold text-slate-700 leading-relaxed whitespace-pre-wrap">
+                {infoModalMessage}
+              </p>
+            </div>
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setInfoModalOpen(false)}
+                className="px-5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs rounded shadow-sm cursor-pointer"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </OwnerShell>
   );
 }

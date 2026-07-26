@@ -22,6 +22,9 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   // ワーカーのIDから実際の「名前」を表示するためのマップ
   const [workerNames, setWorkerNames] = useState<{ [key: string]: string }>({});
 
+  // 💡【新機能】ワーカーごとの社内評価（★0.5〜5.0）を一時保持するステート
+  const [ratingsMap, setRatingsMap] = useState<{ [key: string]: number }>({});
+
   // ポップアップ（モーダル）用の管理ステート
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<"draft" | "approve" | "publish" | "reject" | "individual_approve" | "individual_reject" | null>(null);
@@ -33,8 +36,14 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   // MEMBERS通知切り替えチェックボックス（デフォルトON）
   const [shouldNotify, setShouldNotify] = useState(true);
 
-  // カスタムエラー通知用ステート
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // カスタム通知用ステート
+  const [infoModalTitle, setInfoModalTitle] = useState("⚠️ お知らせ");
+  const [infoModalMessage, setInfoModalMessage] = useState<string | null>(null);
+
+  const showNotification = (title: string, message: string) => {
+    setInfoModalTitle(title);
+    setInfoModalMessage(message);
+  };
 
   useEffect(() => {
     async function fetchJob() {
@@ -45,18 +54,28 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         if (snap.exists()) {
           const data = snap.data();
           
-          // 古い1人用データを仮想的に複数人用（workersマップ）へ変換
           let processedJob = { id: snap.id, ...data } as any;
           if (data.workerId && !data.workers) {
             processedJob.workers = {
               [data.workerId]: {
                 status: data.status || "assigned",
                 totalAccumulatedSeconds: data.totalAccumulatedSeconds || 0,
-                workerComment: data.workerComment || ""
+                workerComment: data.workerComment || "",
+                completedCount: data.completedCount || 0,
+                rating: data.rating || 0
               }
             };
           }
           setJob(processedJob);
+
+          // 評価の初期マップを構築
+          if (processedJob.workers) {
+            const initialRatings: { [key: string]: number } = {};
+            Object.keys(processedJob.workers).forEach(uid => {
+              initialRatings[uid] = processedJob.workers[uid].rating || 0;
+            });
+            setRatingsMap(initialRatings);
+          }
 
           // 受託している全ワーカーの「名前」を取得
           if (processedJob.workers) {
@@ -151,6 +170,39 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     }
   };
 
+  // 💡【新機能】ワーカーの社内評価（★0.5〜5.0）を単独保存する処理
+  const handleSaveWorkerRating = async (workerUid: string) => {
+    if (!job) return;
+    const ratingVal = ratingsMap[workerUid] !== undefined ? ratingsMap[workerUid] : (job.workers?.[workerUid]?.rating || 0);
+    setSubmitting(true);
+    try {
+      const jobRef = doc(db, "jobs", job.id);
+      await updateDoc(jobRef, {
+        [`workers.${workerUid}.rating`]: ratingVal,
+        updatedAt: serverTimestamp()
+      });
+
+      setJob((prev: any) => ({
+        ...prev,
+        workers: {
+          ...prev.workers,
+          [workerUid]: {
+            ...prev.workers?.[workerUid],
+            rating: ratingVal
+          }
+        }
+      }));
+
+      const wName = workerNames[workerUid] || "ワーカー";
+      showNotification("✨ 評価保存完了", `【${wName}】さんの社内評価（★${ratingVal > 0 ? ratingVal.toFixed(1) : "未評価"}）を安全に更新しました。`);
+    } catch (e) {
+      console.error(e);
+      showNotification("⚠️ エラー", "評価の保存に失敗しました。ネットワーク状況をご確認ください。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const triggerModal = (
     type: "draft" | "approve" | "publish" | "reject" | "individual_approve" | "individual_reject",
     targetUid?: string
@@ -185,7 +237,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       } 
       
       else if (action === "approve") {
-        // 全員一括承認（定員に達している場合は案件全体もcompletedへ）
         const updates: any = {
           approvedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
@@ -194,7 +245,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         const limit = job.workerLimit || 1;
         const currentCount = job.workers ? Object.keys(job.workers).length : 0;
         
-        // 定員を満たしていれば案件全体もcompletedにする
         if (currentCount >= limit) {
           updates.status = "completed";
         }
@@ -232,7 +282,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       }
 
       else if (action === "reject") {
-        // 全員一括差し戻し
         const updates: any = {
           updatedAt: serverTimestamp()
         };
@@ -254,14 +303,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         });
       }
 
-      // 💡【ワーカー個別の承認処理】
       else if (action === "individual_approve" && workerUid) {
         const updatedWorkers = { ...job.workers };
         if (updatedWorkers[workerUid]) {
           updatedWorkers[workerUid].status = "completed";
         }
 
-        // 参加者全員がcompletedになり、かつ定員に達しているか判定
         const limit = job.workerLimit || 1;
         const currentCount = Object.keys(updatedWorkers).length;
         const allCompleted = Object.values(updatedWorkers).every((w: any) => w.status === "completed");
@@ -287,7 +334,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         }));
       }
 
-      // 💡【ワーカー個別の差し戻し処理】
       else if (action === "individual_reject" && workerUid) {
         const updatedWorkers = { ...job.workers };
         if (updatedWorkers[workerUid]) {
@@ -307,7 +353,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
     } catch (e) {
       console.error(e);
-      setErrorMessage("更新処理に失敗しました。ネットワーク状況をご確認ください。");
+      showNotification("⚠️ エラー", "更新処理に失敗しました。ネットワーク状況をご確認ください。");
     } finally {
       setSubmitting(false);
     }
@@ -339,14 +385,13 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       router.push("/owner/jobs/new");
     } catch (e) {
       console.error("データの引き継ぎに失敗しました:", e);
-      setErrorMessage("画面切り替えに失敗しました。");
+      showNotification("⚠️ エラー", "画面切り替えに失敗しました。");
     }
   };
 
   if (authLoading || loading) return <OwnerShell title="読み込み中..."><div className="p-10 text-center text-slate-400 text-xs font-bold">案件情報を照会中...</div></OwnerShell>;
   if (!job) return <OwnerShell title="エラー"><div className="p-10 text-center text-rose-600 font-bold text-xs">指定された案件が見つかりませんでした。</div></OwnerShell>;
 
-  // 参加しているワーカー全員の総稼働時間を計算
   const totalAllWorkersSeconds = job.workers 
     ? Object.values(job.workers).reduce((acc: number, w: any) => acc + (w.totalAccumulatedSeconds || 0), 0)
     : (job.totalAccumulatedSeconds || 0);
@@ -402,7 +447,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 bg-white border-2 border-slate-300 rounded overflow-hidden divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-300 shadow-sm">
-            {/* SCクライアント名 */}
             <div className="p-3 flex flex-col justify-between min-h-[64px] relative group">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント名</span>
               <div className="flex items-center justify-between gap-2 mt-1 w-full">
@@ -522,7 +566,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           )}
 
-          {/* 💡【修正】受託しているワーカーが1名以上いれば、全体のステータスが募集中（open）であっても個別カルテを必ず表示 */}
+          {/* 参加ワーカー個別の稼働状況・報告件数・社内評価（★5）管理デスク */}
           {currentWorkerCount > 0 && job.status !== "draft" && (
             <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
               <div className="flex justify-between items-center border-l-2 border-[#5CA685] pl-2">
@@ -536,6 +580,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   Object.keys(job.workers).map(uid => {
                     const wData = job.workers[uid];
                     const wStatus = wData?.status || "assigned";
+                    const currentRating = ratingsMap[uid] !== undefined ? ratingsMap[uid] : (wData.rating || 0);
 
                     return (
                       <div key={uid} className="border-2 border-slate-200 rounded overflow-hidden shadow-2xs">
@@ -560,7 +605,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                               ⏱️ {formatTime(wData.totalAccumulatedSeconds || 0)}
                             </span>
 
-                            {/* 💡【解放】ワーカーがまだcompletedになっていない（作業中・受諾済・検収待ち）状態であれば、いつでも個別承認・差し戻しが可能 */}
                             {wStatus !== "completed" && (
                               <div className="flex items-center gap-1">
                                 <button
@@ -592,15 +636,64 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                           </div>
                         </div>
 
-                        <div className="p-3 bg-white space-y-1">
-                          <span className="text-[9px] font-black text-slate-400 block uppercase">WORKER MEMO / ワーカーの提出メモ</span>
-                          {wData.workerComment ? (
-                            <div className="text-xs text-slate-800 font-bold whitespace-pre-wrap leading-relaxed bg-slate-50 p-2.5 rounded border border-slate-200">
-                              {wData.workerComment}
+                        <div className="p-3 bg-white space-y-3">
+                          
+                          {/* 💡【新機能】ワーカー報告件数 ＆ オーナー評価（★5評価）エリア */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200">
+                            
+                            {/* 件数表示 */}
+                            <div className="flex items-center justify-between text-xs font-bold bg-white px-3 py-1.5 rounded border border-slate-200 shadow-2xs">
+                              <span className="text-slate-500 text-[11px]">📊 ワーカー報告件数:</span>
+                              <span className="font-mono text-sm font-black text-[#0082C8]">{wData.completedCount || 0} 件</span>
                             </div>
-                          ) : (
-                            <div className="text-xs text-slate-400 italic bg-slate-50/50 p-2 rounded">メモの記録はまだありません</div>
-                          )}
+
+                            {/* ★評価 (社内限定非公開) 選択・更新フォーム */}
+                            <div className="flex items-center justify-between bg-white px-2.5 py-1 rounded border border-slate-200 shadow-2xs gap-1">
+                              <span className="text-[10px] font-black text-slate-500 shrink-0">⭐ 社内評価:</span>
+                              <div className="flex items-center gap-1.5">
+                                <select
+                                  value={currentRating}
+                                  onChange={(e) => setRatingsMap({ ...ratingsMap, [uid]: Number(e.target.value) })}
+                                  className="bg-slate-50 border border-slate-300 rounded px-1.5 py-1 text-xs font-black text-slate-800 outline-none focus:border-[#0082C8]"
+                                >
+                                  <option value={0}>未評価 (-)</option>
+                                  <option value={0.5}>★0.5</option>
+                                  <option value={1.0}>★1.0</option>
+                                  <option value={1.5}>★1.5</option>
+                                  <option value={2.0}>★2.0</option>
+                                  <option value={2.5}>★2.5</option>
+                                  <option value={3.0}>★3.0 (標準)</option>
+                                  <option value={3.5}>★3.5</option>
+                                  <option value={4.0}>★4.0</option>
+                                  <option value={4.5}>★4.5</option>
+                                  <option value={5.0}>★5.0 (最高)</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveWorkerRating(uid)}
+                                  disabled={submitting}
+                                  className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-2 py-1 rounded transition-colors shadow-2xs cursor-pointer shrink-0"
+                                  title="このワーカーの★評価を更新保存"
+                                >
+                                  保存
+                                </button>
+                              </div>
+                            </div>
+
+                          </div>
+
+                          {/* ワーカー提出メモ */}
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-black text-slate-400 block uppercase">WORKER MEMO / ワーカーの提出メモ</span>
+                            {wData.workerComment ? (
+                              <div className="text-xs text-slate-800 font-bold whitespace-pre-wrap leading-relaxed bg-slate-50 p-2.5 rounded border border-slate-200">
+                                {wData.workerComment}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-slate-400 italic bg-slate-50/50 p-2 rounded">メモの記録はまだありません</div>
+                            )}
+                          </div>
+
                         </div>
                       </div>
                     );
@@ -625,7 +718,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
 
             <div className="p-4 space-y-4">
-              
               <div className="bg-slate-100 border border-slate-300 p-2.5 rounded text-[11px] font-bold text-slate-600 flex justify-between items-center select-none">
                 <span>👥 現在の受託枠:</span>
                 <span className="font-mono text-xs font-black text-[#5CA685]">
@@ -659,7 +751,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                     type="button"
                     onClick={() => triggerModal("publish")}
                     disabled={submitting}
-                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 border border-black/10 text-white text-xs font-black rounded transition-colors text-center shadow-sm"
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 border border-black/10 text-white text-xs font-black rounded transition-colors text-center shadow-sm cursor-pointer"
                   >
                     🟢 案件を本番公開する
                   </button>
@@ -670,13 +762,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                     type="button"
                     onClick={() => triggerModal("draft")}
                     disabled={submitting}
-                    className="w-full py-2.5 bg-slate-200 hover:bg-slate-300 border border-slate-400 text-slate-700 text-xs font-black rounded transition-colors text-center"
+                    className="w-full py-2.5 bg-slate-200 hover:bg-slate-300 border border-slate-400 text-slate-700 text-xs font-black rounded transition-colors text-center cursor-pointer"
                   >
                     🔒 募集を停止して下書きに戻す
                   </button>
                 )}
 
-                {/* 💡【解放】受託者が1名以上いれば、全体のステータスがopen（募集中）であっても一括操作ボタンを常時表示 */}
                 {currentWorkerCount > 0 && job.status !== "draft" && (
                   <div className="space-y-2 bg-slate-50 p-2.5 border border-slate-300 rounded">
                     <span className="text-[10px] font-black text-slate-400 block mb-1">全メンバー一括操作</span>
@@ -703,7 +794,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 <button 
                   type="button"
                   onClick={() => handleDuplicateJob(false)}
-                  className="w-full py-2.5 bg-[#5CA685] hover:bg-[#4A9272] border border-black/10 text-white text-xs font-black rounded transition-all shadow-sm text-center active:scale-95"
+                  className="w-full py-2.5 bg-[#5CA685] hover:bg-[#4A9272] border border-black/10 text-white text-xs font-black rounded transition-all shadow-sm text-center active:scale-95 cursor-pointer"
                 >
                   📄 この案件をコピーして新規作成
                 </button>
@@ -711,7 +802,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 <button 
                   type="button"
                   onClick={() => handleDuplicateJob(true)}
-                  className="w-full py-2 bg-white hover:bg-slate-50 border-2 border-slate-300 text-slate-700 text-xs font-black rounded transition-colors text-center"
+                  className="w-full py-2 bg-white hover:bg-slate-50 border-2 border-slate-300 text-slate-700 text-xs font-black rounded transition-colors text-center cursor-pointer"
                 >
                   ✏️ この案件を編集する
                 </button>
@@ -722,7 +813,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
       </div>
 
-      {/* シンプルモダンデザインモーダル */}
+      {/* 承認・確認モーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
@@ -776,14 +867,14 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               <button
                 type="button"
                 onClick={() => { setModalOpen(false); setModalType(null); setSelectedWorkerUid(null); }}
-                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide cursor-pointer"
               >
                 キャンセル
               </button>
               <button
                 type="button"
                 onClick={handleModalConfirm}
-                className={`px-4 py-2 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm ${
+                className={`px-4 py-2 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm cursor-pointer ${
                   modalType === "draft" ? "bg-slate-700 hover:bg-slate-800" : 
                   modalType === "reject" || modalType === "individual_reject" ? "bg-amber-500 hover:bg-amber-600" : "bg-[#5CA685] hover:bg-[#4A9272]"
                 }`}
@@ -796,23 +887,23 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         </div>
       )}
 
-      {/* カスタムエラー表示モーダル（Windows標準alert不使用） */}
-      {errorMessage && (
+      {/* カスタム通知モーダル */}
+      {infoModalMessage && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
-            <div className="bg-rose-600 text-white px-4 py-3 font-black text-xs select-none">
-              <span>⚠️ エラー</span>
+            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs select-none">
+              <span>{infoModalTitle}</span>
             </div>
             <div className="p-6 bg-white">
-              <p className="text-xs font-bold text-slate-700 leading-relaxed">
-                {errorMessage}
+              <p className="text-xs font-bold text-slate-700 leading-relaxed whitespace-pre-wrap">
+                {infoModalMessage}
               </p>
             </div>
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end">
               <button
                 type="button"
-                onClick={() => setErrorMessage(null)}
-                className="px-5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs rounded shadow-sm"
+                onClick={() => setInfoModalMessage(null)}
+                className="px-5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs rounded shadow-sm cursor-pointer"
               >
                 OK
               </button>
