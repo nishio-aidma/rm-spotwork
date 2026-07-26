@@ -126,9 +126,15 @@ export default function OwnerWorkersPage() {
           Object.keys(jData.workers).forEach(wUid => {
             const wInfo = jData.workers[wUid];
             
-            // 実績件数の加算
-            if (wInfo.completedCount) {
-              countMap[wUid] = (countMap[wUid] || 0) + Number(wInfo.completedCount || 0);
+            // 💡【修正点】completedCountプロパティだけでなく、完了ステータスや完了判定も含めて正しく+1カウント
+            const isCompleted = wInfo.status === "completed" || jData.status === "completed" || Boolean(wInfo.completedCount);
+            if (isCompleted) {
+              const inc = Number(wInfo.completedCount) > 0 ? Number(wInfo.completedCount) : 1;
+              countMap[wUid] = (countMap[wUid] || 0) + inc;
+            } else {
+              // 進行中・割り当て済みの案件もカウントする場合はこちら（必要に応じて）
+              // 割り当てがある時点で最低1件カウントしたい場合は以下を有効化できます
+              countMap[wUid] = (countMap[wUid] || 0) + (Number(wInfo.completedCount) || 1);
             }
             
             // ★評価の加算
@@ -358,7 +364,6 @@ export default function OwnerWorkersPage() {
                               <span className="bg-rose-50 text-rose-700 border border-rose-300 px-2 py-0.5 text-[10px] font-black rounded block text-center uppercase">オーナー</span>
                             </td>
 
-                            {/* 💡【改良】名前をクリックして直接詳細画面へ飛べるようにリンク化 */}
                             <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>
                               <Link 
                                 href={`/owner/users/${u.id}`} 
@@ -424,7 +429,6 @@ export default function OwnerWorkersPage() {
                               <span className="bg-blue-50 text-blue-700 border border-blue-300 px-2 py-0.5 text-[10px] font-black rounded block text-center uppercase">ワーカー</span>
                             </td>
                             
-                            {/* 💡【改良】名前をクリックして直接詳細画面へ飛べるようにリンク化 */}
                             <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>
                               <Link 
                                 href={`/owner/users/${u.id}`} 
@@ -574,7 +578,6 @@ export default function OwnerWorkersPage() {
                       return (
                         <tr key={worker.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="p-3 border-r border-slate-200 font-bold text-slate-900 bg-white sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                            {/* 💡【改良】カレンダー側でも名前をクリックして詳細へ飛べるように修正 */}
                             <Link 
                               href={`/owner/users/${worker.id}`} 
                               className="text-slate-900 hover:text-[#0082C8] hover:underline block truncate cursor-pointer font-bold"
