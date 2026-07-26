@@ -16,11 +16,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "すきわ～く",
-    template: "%s | すきわ～く" // 各ページの詳細を開いた時に「案件詳細 | すきわ～く」となる美しい設定です
+    default: "タスクミー",
+    template: "%s | タスクミー" // 各ページの詳細を開いた時に「案件詳細 | タスクミー」となる美しい設定です
   },
-  description: "スポットワーク管理システム",
-  // 💡【新設】publicフォルダに配置したオリジナル画像をChromeのアイコン（ファビコン）として読み込ませる設定
+  description: "タスクミー | スポットワーク管理システム",
+  // 💡 publicフォルダに配置したオリジナル画像をChromeのアイコン（ファビコン）として読み込ませる設定
   icons: {
     icon: "/sukiwa-ku_icon.png",
   },

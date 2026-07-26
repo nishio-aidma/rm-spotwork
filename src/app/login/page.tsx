@@ -40,7 +40,7 @@ export default function AuthPage() {
     try {
       setLoading(true); 
 
-      // ユーザー固有のアドレスをベースに、裏側で安全な共通合鍵（パスワード）を自動生成
+      // 💡【重要】既存ユーザーがログインできなくなるのを防ぐため、裏側の合鍵文字はあえて「sukiwork」のまま維持します
       const secretPassword = `${email}_sukiwork_secure_2026`;
 
       try {
@@ -72,7 +72,7 @@ export default function AuthPage() {
             // 初回ログインとして承認し、裏側でAuthアカウントを自動生成
             const userCred = await createUserWithEmailAndPassword(auth, email, secretPassword);
             
-            // 💡【修正点】ownerが登録した「lastName」「firstName」のデータを、1文字も漏らさず新UIDデータへ完全同期保存
+            // ownerが登録した「lastName」「firstName」のデータを、1文字も漏らさず新UIDデータへ完全同期保存
             await setDoc(doc(db, "users", userCred.user.uid), {
               email: email,
               role: userData.role || "worker", 
@@ -109,7 +109,7 @@ export default function AuthPage() {
   if (checkingAuth) {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
-        <div className="text-xs text-slate-400 font-bold animate-pulse">Sukiwork 起動中...</div>
+        <div className="text-xs text-[#0082C8] font-black animate-pulse">タスクミー 起動中...</div>
       </div>
     );
   }
@@ -119,11 +119,11 @@ export default function AuthPage() {
       <div className="max-w-sm w-full bg-white rounded-lg border border-slate-200 p-8 shadow-sm">
         
         <div className="text-center mb-4">
-          <div className="w-9 h-9 bg-slate-900 rounded flex items-center justify-center text-white font-bold text-sm mx-auto mb-3">
-            S
+          <div className="w-10 h-10 bg-[#0082C8] rounded-lg flex items-center justify-center text-white font-black text-xl mx-auto mb-3 shadow-sm">
+            T
           </div>
-          <h1 className="text-base font-bold text-slate-900 tracking-tight">
-            Sukiwork ワークスペース
+          <h1 className="text-base font-black text-slate-900 tracking-tight">
+            タスクミー ワークスペース
           </h1>
         </div>
 
@@ -131,20 +131,20 @@ export default function AuthPage() {
           <div className="font-bold text-slate-900 flex items-center gap-1">🔑 事前登録メンバー専用ログイン</div>
           <div>① オーナーから登録されたメールアドレスを入力します。</div>
           <div>② パスワードは不要です。アドレスが一致することで即座にシステムに承認されます。</div>
-          <div className="text-indigo-600 font-semibold mt-1 pt-1 border-t border-slate-200/60">
+          <div className="text-[#0082C8] font-bold mt-1 pt-1 border-t border-slate-200/60">
             ※2回目以降は、アプリを開くだけで面倒な入力をすべてスキップし、自動的にダッシュボードへ直行します。
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">メールアドレス</label>
+            <label className="text-[11px] font-black text-slate-600 block mb-1">メールアドレス</label>
             <input 
               type="email" 
               placeholder="name@email.com" 
               value={email} 
               onChange={e => setEmail(e.target.value)} 
-              className="w-full rounded border border-slate-300 p-2 text-xs outline-none focus:border-slate-500 bg-white text-slate-800" 
+              className="w-full rounded border-2 border-slate-200 p-2 text-xs font-mono font-bold outline-none focus:border-[#0082C8] bg-white text-slate-800 transition-colors" 
               required 
               disabled={loading}
             />
@@ -153,8 +153,8 @@ export default function AuthPage() {
           <button 
             type="submit" 
             disabled={loading}
-            className={`w-full text-white py-2.5 rounded text-xs font-bold transition-colors mt-4 block text-center ${
-              loading ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 hover:bg-slate-800"
+            className={`w-full text-white py-2.5 rounded text-xs font-black transition-all mt-4 block text-center shadow-sm ${
+              loading ? "bg-slate-400 cursor-not-allowed" : "bg-[#0082C8] hover:bg-[#0072B5] active:scale-95"
             }`}
           >
             {loading ? "サインイン中..." : "パスワードなしでログイン"}

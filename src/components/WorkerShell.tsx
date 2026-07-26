@@ -14,7 +14,7 @@ export default function WorkerShell({ children, title, subTitle }: { children: R
     { name: '案件を探す', href: '/worker/jobs', icon: '🔍' },
     { name: '進行中', href: '/worker/my-jobs', icon: '⏳' },
     { name: 'プロフ', href: '/worker/profile', icon: '👤' },
-    { name: '稼働管理', href: '/worker/work-logs', icon: '📜' }, // 💡【修正箇所】「履歴」から「稼働管理」へ名称変更
+    { name: '稼働管理', href: '/worker/work-logs', icon: '📜' },
   ];
 
   const handleSignOut = async () => {
@@ -34,17 +34,16 @@ export default function WorkerShell({ children, title, subTitle }: { children: R
       <header className="h-14 bg-[#5CA685] flex items-center px-4 justify-between text-white shadow-sm z-10 flex-shrink-0">
         <div className="flex items-center gap-4">
           
-          {/* 高級感のあるエンブレム座布団 */}
-          <div className="bg-gradient-to-br from-white/18 to-white/4 px-2.5 py-1 rounded-md border border-white/25 flex items-center gap-2 select-none shadow-inner backdrop-blur-xs">
+          {/* ロゴエンブレムボックス */}
+          <div className="bg-gradient-to-br from-white/18 to-white/4 px-3 py-1.5 rounded-md border border-white/25 flex items-center gap-2 select-none shadow-inner backdrop-blur-xs">
             <img 
               src="/sukiwa-ku_icon.png" 
-              alt="すきわ～く ロゴ" 
-              className="h-7 w-7 rounded object-cover shadow-xs select-none" 
+              alt="タスクミー ロゴ" 
+              className="h-6 w-6 rounded object-cover shadow-xs select-none" 
             />
             <div className="flex flex-col justify-center">
-              <span className="text-[8px] font-black tracking-widest text-white/90 leading-none mb-0.5 uppercase">ちょいっと隙間におしごと</span>
               <span className="text-sm font-black tracking-wide leading-none text-white bg-clip-text bg-gradient-to-r from-white to-slate-100 drop-shadow-md">
-                すきわ～く<span className="text-[10px] text-white/80 font-bold ml-0.5">✨</span>
+                タスクミー<span className="text-[10px] text-white/80 font-bold ml-0.5">✨</span>
               </span>
             </div>
           </div>
@@ -58,7 +57,7 @@ export default function WorkerShell({ children, title, subTitle }: { children: R
         <button 
           onClick={handleSignOut}
           disabled={isLoggingOut}
-          className="bg-black/20 hover:bg-black/30 disabled:opacity-50 text-white text-[11px] font-bold px-3 py-1.5 rounded transition-colors"
+          className="bg-black/20 hover:bg-black/30 disabled:opacity-50 text-white text-[11px] font-bold px-3 py-1.5 rounded transition-colors cursor-pointer"
         >
           {isLoggingOut ? "サインアウト中..." : "サインアウト 🚪"}
         </button>

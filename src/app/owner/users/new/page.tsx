@@ -24,7 +24,7 @@ export default function OwnerNewUserPage() {
   const [lastName, setLastName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false); // パスワードステートは不要になったため撤去
+  const [submitting, setSubmitting] = useState(false);
 
   // シンプルモダンモーダル用の状態管理インフラ
   const [modalOpen, setModalOpen] = useState(false);
@@ -32,14 +32,14 @@ export default function OwnerNewUserPage() {
   const [modalTitle, setModalTitle] = useState("");
   const [modalMessage, setModalMessage] = useState("");
 
-  // フォーム送信時の入り口（パスワード文字数チェックは不要になったため削除）
+  // フォーム送信時の入り口
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     // 登録確認ポップアップを起動
     setModalMode("confirm");
     setModalTitle("📥 アカウント発行の確認");
-    setModalMessage(`新しい ${role === "owner" ? "👑 オーナー" : "👥 ワーカー"} アカウントを作成し、データベースへ登録します。よろしいですか？\n\n対象：${lastName} ${firstName} (${email})`);
+    setModalMessage(`新しい ${role === "owner" ? "👑 オーナー" : "👥 ワーカー"} アカウントを作成し、タスクミーのデータベースへ登録します。よろしいですか？\n\n対象：${lastName} ${firstName} (${email})`);
     setModalOpen(true);
   };
 
@@ -55,7 +55,7 @@ export default function OwnerNewUserPage() {
       tempApp = initializeApp(firebaseConfig, tempAppName);
       const tempAuth = getAuth(tempApp);
 
-      // 💡【最重要変更】ログイン画面と100%共通の自動合鍵（パスワード）をここで自動生成します
+      // 💡【最重要】ログイン画面と100%共通の自動合鍵（パスワード）をここで自動生成します
       const secretPassword = `${email}_sukiwork_secure_2026`;
 
       // 1. 臨時の認証ゲートでユーザーを新規作成（自動生成した合鍵を流し込みます）
@@ -74,7 +74,7 @@ export default function OwnerNewUserPage() {
 
       setModalMode("success");
       setModalTitle("✓ アカウント発行完了");
-      setModalMessage(`スタッフ「${lastName} ${firstName}」さんのアカウント発行およびシステム同期保存が200%完璧に完了しました！\n次回から、このスタッフはパスワードなし（メールアドレスのみ）で即座にログイン可能です。`);
+      setModalMessage(`タスクミーにスタッフ「${lastName} ${firstName}」さんのアカウントを発行しました！\n次回から、このスタッフはパスワードなし（メールアドレスのみ）で即座にログイン可能です。`);
       setModalOpen(true);
 
     } catch (error: any) {
@@ -102,7 +102,7 @@ export default function OwnerNewUserPage() {
   };
 
   return (
-    <OwnerShell title="スタッフ新規登録" subTitle="管理者によるアカウント手動発行">
+    <OwnerShell title="スタッフ新規登録" subTitle="管理者によるタスクミーアカウント手動発行">
       <div className="max-w-md mx-auto bg-white border-2 border-slate-300 rounded shadow-sm overflow-hidden text-slate-900 font-sans antialiased mt-6">
         
         <div className="bg-slate-100 p-3 border-b-2 border-slate-300 flex justify-between items-center select-none">
@@ -119,7 +119,7 @@ export default function OwnerNewUserPage() {
               <button
                 type="button"
                 onClick={() => setRole("worker")}
-                className={`py-2 text-center text-xs font-black border-2 rounded transition-colors ${
+                className={`py-2 text-center text-xs font-black border-2 rounded transition-colors cursor-pointer ${
                   role === "worker"
                     ? "bg-blue-50 border-blue-400 text-blue-700 font-black"
                     : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
@@ -130,7 +130,7 @@ export default function OwnerNewUserPage() {
               <button
                 type="button"
                 onClick={() => setRole("owner")}
-                className={`py-2 text-center text-xs font-black border-2 rounded transition-colors ${
+                className={`py-2 text-center text-xs font-black border-2 rounded transition-colors cursor-pointer ${
                   role === "owner"
                     ? "bg-rose-50 border-rose-400 text-rose-700 font-black"
                     : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
@@ -183,14 +183,12 @@ export default function OwnerNewUserPage() {
             />
           </div>
 
-          {/* 💡【修正点】手動のパスワード入力欄（<div className="space-y-1">...</div>）を完全に撤去しました */}
-
           {/* 登録ボタン */}
           <div className="pt-2">
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-3 bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-50"
+              className="w-full py-3 bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black rounded border border-black/10 transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
             >
               {submitting ? "スタッフアカウント発行中..." : "➕ この内容でスタッフを登録・発行する"}
             </button>
@@ -198,7 +196,7 @@ export default function OwnerNewUserPage() {
               type="button"
               disabled={submitting}
               onClick={() => router.push("/owner/users")}
-              className="w-full mt-2 py-2 bg-white border-2 border-slate-300 text-slate-600 text-xs font-black rounded hover:bg-slate-50 transition-colors"
+              className="w-full mt-2 py-2 bg-white border-2 border-slate-300 text-slate-600 text-xs font-black rounded hover:bg-slate-50 transition-colors cursor-pointer"
             >
               登録せずに一覧へ戻る
             </button>
@@ -230,14 +228,14 @@ export default function OwnerNewUserPage() {
                   <button
                     type="button"
                     onClick={() => setModalOpen(false)}
-                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
+                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide cursor-pointer"
                   >
                     キャンセル
                   </button>
                   <button
                     type="button"
                     onClick={handleExecuteCreateUser}
-                    className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                    className="px-4 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm cursor-pointer"
                   >
                     はい、登録する
                   </button>
@@ -246,7 +244,7 @@ export default function OwnerNewUserPage() {
                 <button
                   type="button"
                   onClick={handleCloseSuccessModal}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm cursor-pointer"
                 >
                   OK（スタッフ一覧へ）
                 </button>
@@ -254,7 +252,7 @@ export default function OwnerNewUserPage() {
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-5 py-2 bg-slate-700 hover:bg-slate-800 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                  className="px-5 py-2 bg-slate-700 hover:bg-slate-800 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm cursor-pointer"
                 >
                   戻って修正する
                 </button>

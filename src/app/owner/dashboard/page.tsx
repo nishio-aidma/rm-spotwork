@@ -204,16 +204,16 @@ export default function OwnerDashboard() {
             システムクイック操作パネル
           </div>
           <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full md:w-auto">
-            <Link href="/owner/jobs/new" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
+            <Link href="/owner/jobs/new" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap cursor-pointer">
               📝 新規案件登録
             </Link>
-            <Link href="/owner/jobs" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
+            <Link href="/owner/jobs" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap cursor-pointer">
               🗂️ 案件・検収管理
             </Link>
-            <Link href="/owner/exports" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
+            <Link href="/owner/export" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap cursor-pointer">
               📊 月次データ出力
             </Link>
-            <Link href="/owner/settings" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap">
+            <Link href="/owner/settings" className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-xs font-black px-4 py-2 rounded text-center transition-all shadow-sm active:scale-95 whitespace-nowrap cursor-pointer">
               ⚙️ 全体ルール設定
             </Link>
           </div>
@@ -358,7 +358,7 @@ export default function OwnerDashboard() {
               {alertJobs.map((job) => (
                 <div key={job.id} className="p-3 flex items-center justify-between text-slate-800 hover:bg-slate-50/40 transition-colors border-b border-slate-100 last:border-0">
                   <div className="min-w-0 flex-1 pr-3">
-                    <Link href={`/owner/jobs`} className="font-black text-slate-950 hover:text-[#0082C8] hover:underline block truncate text-sm">
+                    <Link href={`/owner/jobs`} className="font-black text-slate-950 hover:text-[#0082C8] hover:underline block truncate text-sm cursor-pointer">
                       {job.title}
                     </Link>
                     <p className="text-xs text-slate-500 mt-1 font-bold">担当ワーカー: {job.workerName}</p>
@@ -380,7 +380,7 @@ export default function OwnerDashboard() {
                 </div>
               ))}
               {alertJobs.length === 0 && (
-                <div className="p-16 text-center text-slate-400 italic font-medium text-xs">現在、検収待ちや至急対応 of 案件はありません。順調です！</div>
+                <div className="p-16 text-center text-slate-400 italic font-medium text-xs">現在、検収待ちや至急対応の案件はありません。順調です！</div>
               )}
             </div>
           </div>
@@ -402,7 +402,7 @@ export default function OwnerDashboard() {
                     <span className="text-[10px] text-slate-300 font-bold">➔</span>
                     <Link 
                       href={`/owner/jobs/${com.id}`} 
-                      className="font-black text-xs text-[#0082C8] hover:underline hover:text-[#0072B5] transition-colors truncate max-w-xs sm:max-w-md block"
+                      className="font-black text-xs text-[#0082C8] hover:underline hover:text-[#0072B5] transition-colors truncate max-w-xs sm:max-w-md block cursor-pointer"
                     >
                       {com.title}
                     </Link>
@@ -435,6 +435,6 @@ export default function OwnerDashboard() {
         </div>
 
       </div>
-    </OwnerShell> // 💡 完璧に OwnerShell で閉じる形に大修正！
+    </OwnerShell>
   );
 }

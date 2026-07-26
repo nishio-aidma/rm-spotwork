@@ -103,11 +103,11 @@ export default function WorkerDashboard() {
     <WorkerShell title="メインメニュー" subTitle="業務概要と進捗状況">
       <div className="max-w-full mx-auto space-y-4">
         
-        {/* 💡【超絶新設】ワーカー専用：公式ご利用マニュアル3連クイックリンクボード */}
+        {/* ワーカー専用：公式ご利用マニュアル3連クイックリンクボード */}
         <div className="bg-slate-900 text-white p-4 rounded border border-slate-800 shadow-md select-none animate-fade-in space-y-3">
           <div className="flex items-center gap-2">
             <span className="bg-[#0082C8] text-white text-[9px] font-black px-1.5 py-0.5 rounded-sm uppercase tracking-wider">OFFICIAL MANUALS</span>
-            <h4 className="text-xs font-black text-slate-100 tracking-wide">すきわ〜く 公式ご利用マニュアル</h4>
+            <h4 className="text-xs font-black text-slate-100 tracking-wide">タスクミー 公式ご利用マニュアル</h4>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -164,13 +164,13 @@ export default function WorkerDashboard() {
             {/* 月次セレクター */}
             <div className="flex items-center justify-between bg-white px-3 py-2 rounded border-2 border-slate-300 shadow-sm">
               <div className="flex items-center gap-1">
-                <button onClick={() => changeMonth(-1)} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 font-bold transition-colors">〈</button>
+                <button onClick={() => changeMonth(-1)} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 font-bold transition-colors cursor-pointer">〈</button>
                 <h2 className="text-xs font-black text-slate-800 mx-2">
                   {viewDate.getFullYear()}年 {monthStr}月 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">の実績</span>
                 </h2>
-                <button onClick={() => changeMonth(1)} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 font-bold transition-colors">〉</button>
+                <button onClick={() => changeMonth(1)} className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 font-bold transition-colors cursor-pointer">〉</button>
               </div>
-              <button onClick={() => setViewDate(new Date())} className="text-[11px] font-black text-[#0082C8] hover:underline uppercase tracking-tighter">今月へ</button>
+              <button onClick={() => setViewDate(new Date())} className="text-[11px] font-black text-[#0082C8] hover:underline uppercase tracking-tighter cursor-pointer">今月へ</button>
             </div>
 
             {/* 統計カード */}
@@ -196,13 +196,13 @@ export default function WorkerDashboard() {
 
             {/* クイックアクション：特大フラットボタン */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Link href="/worker/jobs" className="flex flex-col items-center justify-center p-8 bg-[#0082C8] hover:bg-[#0072B5] text-white border border-black/10 rounded shadow-sm transition-all group text-center">
+              <Link href="/worker/jobs" className="flex flex-col items-center justify-center p-8 bg-[#0082C8] hover:bg-[#0072B5] text-white border border-black/10 rounded shadow-sm transition-all group text-center cursor-pointer">
                 <span className="text-3xl mb-2">🔍</span>
                 <span className="text-sm font-black tracking-wider">新しい案件を探す</span>
                 <span className="text-[10px] text-white/70 mt-1 font-medium">公開中の仕事一覧画面へ</span>
               </Link>
 
-              <Link href="/worker/my-jobs" className="flex flex-col items-center justify-center p-8 bg-white border-2 border-slate-300 hover:border-slate-400 text-slate-900 shadow-sm transition-all group text-center relative">
+              <Link href="/worker/my-jobs" className="flex flex-col items-center justify-center p-8 bg-white border-2 border-slate-300 hover:border-slate-400 text-slate-900 shadow-sm transition-all group text-center relative cursor-pointer">
                 <span className="text-3xl mb-2">⏳</span>
                 <span className="text-sm font-black tracking-wider">進行中のタスク確認</span>
                 <span className="text-[10px] text-slate-400 mt-1 font-medium">現在対応中の案件を開きます</span>
@@ -225,7 +225,7 @@ export default function WorkerDashboard() {
 
               <div className="divide-y divide-slate-200 overflow-y-auto max-h-[340px]">
                 {recentJobs.length > 0 ? recentJobs.map((job) => (
-                  <Link key={job.id} href={`/worker/jobs/${job.id}`} className="p-3 hover:bg-slate-50 flex items-center justify-between text-xs transition-colors group">
+                  <Link key={job.id} href={`/worker/jobs/${job.id}`} className="p-3 hover:bg-slate-50 flex items-center justify-between text-xs transition-colors group cursor-pointer">
                     <div className="flex items-center gap-3 min-w-0 flex-1 mr-2">
                       <span className={`w-2 h-2 flex-shrink-0 block ${
                         job.status === 'working' ? 'bg-blue-500' : 
@@ -293,7 +293,7 @@ export default function WorkerDashboard() {
                     </span>
                     <Link 
                       href={`/worker/jobs/${job.id}`}
-                      className="text-[#0082C8] hover:underline font-black text-[11px] whitespace-nowrap"
+                      className="text-[#0082C8] hover:underline font-black text-[11px] whitespace-nowrap cursor-pointer"
                     >
                       詳細 →
                     </Link>
