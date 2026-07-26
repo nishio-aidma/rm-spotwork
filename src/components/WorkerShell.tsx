@@ -14,7 +14,7 @@ export default function WorkerShell({ children, title, subTitle }: { children: R
     { name: '案件を探す', href: '/worker/jobs', icon: '🔍' },
     { name: '進行中', href: '/worker/my-jobs', icon: '⏳' },
     { name: 'プロフ', href: '/worker/profile', icon: '👤' },
-    { name: '履歴', href: '/worker/work-logs', icon: '📜' },
+    { name: '稼働管理', href: '/worker/work-logs', icon: '📜' }, // 💡【修正箇所】「履歴」から「稼働管理」へ名称変更
   ];
 
   const handleSignOut = async () => {
@@ -30,13 +30,12 @@ export default function WorkerShell({ children, title, subTitle }: { children: R
   return (
     <div className="min-h-screen bg-[#F0F2F5] flex flex-col font-sans antialiased text-slate-900 select-none">
       
-      {/* 上部ヘッダー：💡 背景を青からオリジナルセージグリーン（#5CA685）にリニューアル */}
+      {/* 上部ヘッダー */}
       <header className="h-14 bg-[#5CA685] flex items-center px-4 justify-between text-white shadow-sm z-10 flex-shrink-0">
         <div className="flex items-center gap-4">
           
-          {/* 高級感のあるエンブレム座布団の中に、本物のオリジナルロゴ画像を綺麗にドッキング */}
+          {/* 高級感のあるエンブレム座布団 */}
           <div className="bg-gradient-to-br from-white/18 to-white/4 px-2.5 py-1 rounded-md border border-white/25 flex items-center gap-2 select-none shadow-inner backdrop-blur-xs">
-            {/* 💡 暫定の絵文字を撤去し、本物の新ロゴ画像を配置しました */}
             <img 
               src="/sukiwa-ku_icon.png" 
               alt="すきわ～く ロゴ" 
@@ -77,7 +76,7 @@ export default function WorkerShell({ children, title, subTitle }: { children: R
                   href={item.href}
                   className={`flex flex-col items-center justify-center aspect-square w-full rounded border transition-all ${
                     isActive 
-                      ? 'bg-white border-slate-400 text-[#5CA685] shadow-sm font-black' // 💡 アクティブ文字色をグリーンへ変更
+                      ? 'bg-white border-slate-400 text-[#5CA685] shadow-sm font-black' 
                       : 'border-transparent text-slate-600 hover:bg-white/50 hover:text-slate-900'
                   }`}
                 >
