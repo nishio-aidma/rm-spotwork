@@ -21,6 +21,9 @@ export default function OwnerJobsPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [targetJob, setTargetJob] = useState<{ id: string; title: string } | null>(null);
+  
+  // 💡 Windows標準alert排除用のカスタムエラーポップアップステート
+  const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null);
 
   const getTodayStr = () => {
     const today = new Date();
@@ -100,13 +103,17 @@ export default function OwnerJobsPage() {
     return () => unsubscribe();
   }, []);
 
+  // 💡【請負中判定の拡張】募集中であっても1人以上受託者がいれば「請負中」に含めるロジック
   useEffect(() => {
     let result = [...allJobs];
 
     if (activeTab === "recruiting") {
       result = result.filter(job => job.status === "open" || job.status === "draft" || job.status === "expired");
     } else if (activeTab === "working") {
-      result = result.filter(job => job.status === "assigned" || job.status === "working" || job.status === "paused");
+      result = result.filter(job => {
+        const hasWorker = job.workers && Object.keys(job.workers).length > 0;
+        return job.status === "assigned" || job.status === "working" || job.status === "paused" || (job.status === "open" && hasWorker);
+      });
     } else if (activeTab === "completed") {
       result = result.filter(job => job.status === "review" || job.status === "completed");
     }
@@ -132,7 +139,11 @@ export default function OwnerJobsPage() {
   };
 
   const recruitingCount = allJobs.filter(j => j.status === "open" || j.status === "draft" || j.status === "expired").length;
-  const workingCount = allJobs.filter(j => j.status === "assigned" || j.status === "working" || j.status === "paused").length;
+  // 💡 請負中バッジの件数カウントも同様に、受託者が1人以上いる募集中案件を含める
+  const workingCount = allJobs.filter(j => {
+    const hasWorker = j.workers && Object.keys(j.workers).length > 0;
+    return j.status === "assigned" || j.status === "working" || j.status === "paused" || (j.status === "open" && hasWorker);
+  }).length;
   const completedCount = allJobs.filter(j => j.status === "review" || j.status === "completed").length;
 
   const triggerDeleteModal = (jobId: string, title: string) => {
@@ -149,7 +160,7 @@ export default function OwnerJobsPage() {
       setAllJobs(prev => prev.filter(job => job.id !== targetJob.id));
     } catch (e) {
       console.error(e);
-      alert("削除処理に失敗しました。");
+      setErrorModalMessage("削除処理に失敗しました。ネットワーク状況等をご確認ください。");
     } finally {
       setTargetJob(null);
     }
@@ -304,14 +315,14 @@ export default function OwnerJobsPage() {
         {/* 2. 現場特化型データテーブル */}
         <div className="bg-white border-2 border-slate-300 rounded overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse table-fixed text-xs min-w-[1000px]">
+            <table className="w-full text-left border-collapse table-fixed text-xs min-w-[1100px]">
               <thead className="bg-slate-100 border-b-2 border-slate-300 text-slate-700 font-black">
                 <tr>
                   <th className="p-3 border-r border-slate-300 w-24">ステータス</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-center">緊急度</th>
                   <th className="p-3 border-r border-slate-300 w-26 text-center">仕事種別</th>
-                  {/* 💡【複数人対応】列タイトルを「担当スタッフ」から「受託状況」へ変更 */}
-                  <th className="p-3 border-r border-slate-300 w-28 text-center">受託状況</th>
+                  {/* 💡【表示拡張】受託状況列の幅を広げ、ワーカー名と個別状況を表示 */}
+                  <th className="p-3 border-r border-slate-300 w-48 text-center">受託状況・担当ワーカー</th>
                   <th className="p-3 border-r border-slate-300">案件タイトル</th>
                   <th className="p-3 border-r border-slate-300 w-20 text-right">件数</th>
                   <th className="p-3 border-r border-slate-300 w-28 text-center">期日</th>
@@ -323,11 +334,10 @@ export default function OwnerJobsPage() {
               <tbody className="divide-y divide-slate-200 font-medium text-slate-800">
                 {filteredJobs.map((job) => {
                   const isUrgentDeadline = isThisWeekDeadline(job.deadline);
-                  
-                  // 💡【定員計算】受託している人数と定員を取得
-                  const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
                   const limit = job.workerLimit || 1;
-                  const isFull = currentWorkerCount >= limit;
+                  
+                  // ワーカー情報のリスト化
+                  const workerEntries = job.workers ? Object.entries(job.workers) : [];
 
                   return (
                     <tr key={job.id} className="hover:bg-slate-50 transition-colors">
@@ -370,14 +380,58 @@ export default function OwnerJobsPage() {
                         </span>
                       </td>
 
-                      {/* 💡【複数人対応表示】定員メーター */}
-                      <td className="p-3 border-r border-slate-200 text-center font-bold text-slate-700">
+                      {/* 💡【新機能】受託状況・担当ワーカー名・稼働ステータス・メモ新着アイコンのカード型表示 */}
+                      <td className="p-2.5 border-r border-slate-200">
                         {job.status === "draft" || job.status === "expired" ? (
-                          <span className="text-slate-300 font-normal">-</span>
+                          <span className="text-slate-300 font-normal block text-center">-</span>
+                        ) : workerEntries.length === 0 ? (
+                          <div className="text-center py-1">
+                            <span className="text-slate-400 text-[11px] font-bold block">未受諾</span>
+                            <span className="text-[10px] font-mono text-slate-400">0 / {limit} 名</span>
+                          </div>
                         ) : (
-                          <span className={`font-mono text-[11px] ${isFull ? 'text-[#0082C8] bg-blue-50 px-1.5 py-0.5 rounded' : 'text-slate-500'}`}>
-                            {currentWorkerCount} / {limit} 名
-                          </span>
+                          <div className="space-y-1.5">
+                            <div className="text-[10px] font-mono font-black text-[#0082C8] text-right border-b border-slate-100 pb-0.5">
+                              受託: {workerEntries.length} / {limit} 名
+                            </div>
+                            {workerEntries.map(([wUid, wData]: [string, any]) => {
+                              const wName = userMap[wUid] || "担当スタッフ";
+                              const wStatus = wData?.status || "assigned";
+                              const hasComment = wData?.workerComment && wData.workerComment.trim() !== "";
+
+                              return (
+                                <div key={wUid} className="bg-slate-50 p-1.5 rounded border border-slate-200 text-[11px] space-y-1 shadow-2xs">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="font-bold text-slate-800 truncate max-w-[100px]" title={wName}>
+                                      👤 {wName}
+                                    </span>
+                                    <span className={`text-[9px] px-1.5 py-0.5 font-black rounded shrink-0 ${
+                                      wStatus === 'working' ? 'bg-rose-100 text-rose-700 animate-pulse' :
+                                      wStatus === 'paused' ? 'bg-amber-100 text-amber-800' :
+                                      wStatus === 'assigned' ? 'bg-blue-100 text-blue-700' :
+                                      wStatus === 'review' ? 'bg-orange-100 text-orange-800' :
+                                      wStatus === 'completed' ? 'bg-slate-200 text-slate-600' :
+                                      'bg-slate-100 text-slate-600'
+                                    }`}>
+                                      {wStatus === 'working' ? '🔴 稼働中' :
+                                       wStatus === 'paused' ? '⏸️ 停止中' :
+                                       wStatus === 'assigned' ? '📥 受諾済' :
+                                       wStatus === 'review' ? '🟡 検収待' :
+                                       wStatus === 'completed' ? '🏁 完了' : wStatus}
+                                    </span>
+                                  </div>
+                                  
+                                  {/* ワーカーからの報告メモ新着表示 */}
+                                  {hasComment && (
+                                    <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-300 rounded px-1.5 py-0.5 text-[9px] text-emerald-900 font-bold truncate" title={wData.workerComment}>
+                                      <span className="bg-emerald-600 text-white text-[8px] px-1 rounded font-black shrink-0">新着メモ</span>
+                                      <span className="truncate">{wData.workerComment}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
                       </td>
 
@@ -426,7 +480,7 @@ export default function OwnerJobsPage() {
           {filteredJobs.length === 0 && (
             <div className="p-16 text-center text-slate-400 italic font-medium bg-slate-50">
               {activeTab === 'recruiting' && "該当する募集中・下書き・期限切れの案件はありません。"}
-              {activeTab === 'working' && "該当するワーカー請割中・稼働中の案件はありません。"}
+              {activeTab === 'working' && "該当するワーカー請負中・稼働中の案件はありません。"}
               {activeTab === 'completed' && "該当する納品済・完了の案件はありません。"}
             </div>
           )}
@@ -434,7 +488,7 @@ export default function OwnerJobsPage() {
 
       </div>
 
-      {/* カスタム確認ポップアップ */}
+      {/* カスタム確認ポップアップ（案件削除用） */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
@@ -472,6 +526,31 @@ export default function OwnerJobsPage() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* 💡 カスタムエラー表示ポップアップ（Windows標準alert不使用） */}
+      {errorModalMessage && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            <div className="bg-rose-600 text-white px-4 py-3 font-black text-xs select-none">
+              <span>⚠️ エラー</span>
+            </div>
+            <div className="p-6 bg-white">
+              <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                {errorModalMessage}
+              </p>
+            </div>
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setErrorModalMessage(null)}
+                className="px-5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs rounded shadow-sm"
+              >
+                OK
+              </button>
+            </div>
           </div>
         </div>
       )}
