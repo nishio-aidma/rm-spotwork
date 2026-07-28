@@ -22,7 +22,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   // ワーカーのIDから実際の「名前」を表示するためのマップ
   const [workerNames, setWorkerNames] = useState<{ [key: string]: string }>({});
 
-  // 💡【新機能】ワーカーごとの社内評価（★0.5〜5.0）を一時保持するステート
+  // ワーカーごとの社内評価（★0.5〜5.0）を一時保持するステート
   const [ratingsMap, setRatingsMap] = useState<{ [key: string]: number }>({});
 
   // ポップアップ（モーダル）用の管理ステート
@@ -170,7 +170,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     }
   };
 
-  // 💡【新機能】ワーカーの社内評価（★0.5〜5.0）を単独保存する処理
+  // ワーカーの社内評価（★0.5〜5.0）を単独保存する処理
   const handleSaveWorkerRating = async (workerUid: string) => {
     if (!job) return;
     const ratingVal = ratingsMap[workerUid] !== undefined ? ratingsMap[workerUid] : (job.workers?.[workerUid]?.rating || 0);
@@ -237,17 +237,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       } 
       
       else if (action === "approve") {
+        // 💡【修正点】人数枠（定員）に関わらず、一括承認を押した場合は案件全体も「completed（完了）」に確実に変更します
         const updates: any = {
+          status: "completed",
           approvedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         };
-        
-        const limit = job.workerLimit || 1;
-        const currentCount = job.workers ? Object.keys(job.workers).length : 0;
-        
-        if (currentCount >= limit) {
-          updates.status = "completed";
-        }
 
         if (job.workers) {
           Object.keys(job.workers).forEach(uid => {
@@ -257,7 +252,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         await updateDoc(jobRef, updates);
         
         setJob((prev: any) => {
-          const newJob = { ...prev, status: updates.status || prev.status };
+          const newJob = { ...prev, status: "completed" };
           if (newJob.workers) {
             Object.keys(newJob.workers).forEach(uid => {
               newJob.workers[uid].status = "completed";
@@ -265,6 +260,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           }
           return newJob;
         });
+
+        showNotification("✓ 一括検収承認完了", "参加しているワーカー全員の作業を承認し、案件を『完了』に更新しました。");
       }
 
       else if (action === "publish") {
@@ -283,6 +280,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
       else if (action === "reject") {
         const updates: any = {
+          status: "assigned",
           updatedAt: serverTimestamp()
         };
         if (job.workers) {
@@ -293,7 +291,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         await updateDoc(jobRef, updates);
 
         setJob((prev: any) => {
-          const newJob = { ...prev };
+          const newJob = { ...prev, status: "assigned" };
           if (newJob.workers) {
             Object.keys(newJob.workers).forEach(uid => {
               newJob.workers[uid].status = "assigned";
@@ -301,6 +299,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           }
           return newJob;
         });
+
+        showNotification("↩ 一括差し戻し完了", "全員の作業ステータスを準備中に差し戻しました。");
       }
 
       else if (action === "individual_approve" && workerUid) {
@@ -309,19 +309,16 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           updatedWorkers[workerUid].status = "completed";
         }
 
-        const limit = job.workerLimit || 1;
-        const currentCount = Object.keys(updatedWorkers).length;
+        // 参加している全ワーカーが完了したかチェック
         const allCompleted = Object.values(updatedWorkers).every((w: any) => w.status === "completed");
-        
-        const isFullAndAllCompleted = currentCount >= limit && allCompleted;
-        const finalJobStatus = isFullAndAllCompleted ? "completed" : job.status;
+        const finalJobStatus = allCompleted ? "completed" : job.status;
 
         const updateData: any = {
           [`workers.${workerUid}.status`]: "completed",
           status: finalJobStatus,
           updatedAt: serverTimestamp()
         };
-        if (isFullAndAllCompleted) {
+        if (allCompleted) {
           updateData.approvedAt = serverTimestamp();
         }
 
@@ -332,6 +329,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           status: finalJobStatus,
           workers: updatedWorkers
         }));
+
+        showNotification("✓ 個別承認完了", `【${workerNames[workerUid] || "ワーカー"}】さんの作業を承認しました。`);
       }
 
       else if (action === "individual_reject" && workerUid) {
@@ -340,15 +339,22 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           updatedWorkers[workerUid].status = "assigned";
         }
 
+        // 差し戻した場合は全体ステータスも「assigned」または元の状態へ
+        const finalJobStatus = job.status === "completed" ? "assigned" : job.status;
+
         await updateDoc(jobRef, {
           [`workers.${workerUid}.status`]: "assigned",
+          status: finalJobStatus,
           updatedAt: serverTimestamp()
         });
 
         setJob((prev: any) => ({
           ...prev,
+          status: finalJobStatus,
           workers: updatedWorkers
         }));
+
+        showNotification("↩ 個別差し戻し完了", `【${workerNames[workerUid] || "ワーカー"}】さんの作業を準備中に戻しました。`);
       }
 
     } catch (e) {
@@ -409,7 +415,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             <button 
               type="button"
               onClick={() => router.push("/owner/jobs")} 
-              className="bg-slate-100 border-2 border-slate-400 hover:bg-slate-200 text-slate-800 text-[11px] font-black px-4 py-1.5 rounded transition-all active:scale-95 shadow-sm"
+              className="bg-slate-100 border-2 border-slate-400 hover:bg-slate-200 text-slate-800 text-[11px] font-black px-4 py-1.5 rounded transition-all active:scale-95 shadow-sm cursor-pointer"
             >
               🔙 案件管理（一覧）に戻る
             </button>
@@ -432,7 +438,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                 <button
                   type="button"
                   onClick={() => handleCopyToClipboard(job.title, "title")}
-                  className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded p-1 text-[11px] font-bold transition-all shadow-sm flex items-center gap-1 active:scale-95"
+                  className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded p-1 text-[11px] font-bold transition-all shadow-sm flex items-center gap-1 active:scale-95 cursor-pointer"
                   title="タイトルをコピー"
                 >
                   📋 <span className="text-[9px] font-black text-slate-600">COPY</span>
@@ -456,7 +462,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                     <button
                       type="button"
                       onClick={() => handleCopyToClipboard(job.scClient, "scClient")}
-                      className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded px-1.5 py-0.5 text-[9px] font-black transition-all active:scale-95"
+                      className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded px-1.5 py-0.5 text-[9px] font-black transition-all active:scale-95 cursor-pointer"
                       title="クライアント名をコピー"
                     >
                       📋
@@ -494,7 +500,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">📄 送信文面内容</span>
                     {job.formContent ? (
-                      <a href={job.formContent} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                      <a href={job.formContent} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
                         リンクを開く ↗
                       </a>
                     ) : <span className="text-slate-300 font-normal">未登録</span>}
@@ -502,7 +508,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">📋 入力情報リスト</span>
                     {job.inputInfo ? (
-                      <a href={job.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                      <a href={job.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
                         リンクを開く ↗
                       </a>
                     ) : <span className="text-slate-300 font-normal">未登録</span>}
@@ -512,7 +518,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                       🔗 {job.additionalLinkTitle || "その他追加リンク"}
                     </span>
                     {job.additionalLinkUrl ? (
-                      <a href={job.additionalLinkUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                      <a href={job.additionalLinkUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
                         リンクを開く ↗
                       </a>
                     ) : <span className="text-slate-300 font-normal">未登録</span>}
@@ -523,7 +529,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">🌐 抽出ターゲットサイト</span>
                     {job.siteUrl ? (
-                      <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                      <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
                         リンクを開く ↗
                       </a>
                     ) : <span className="text-slate-300 font-normal">未登録</span>}
@@ -531,7 +537,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
                     <span className="text-slate-600">📋 入力項目（指示書等）</span>
                     {job.targetItems ? (
-                      <a href={job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
+                      <a href={job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
                         リンクを開く ↗
                       </a>
                     ) : <span className="text-slate-300 font-normal">未登録</span>}
@@ -638,7 +644,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
                         <div className="p-3 bg-white space-y-3">
                           
-                          {/* 💡【新機能】ワーカー報告件数 ＆ オーナー評価（★5評価）エリア */}
+                          {/* ワーカー報告件数 ＆ オーナー評価（★5評価）エリア */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200">
                             
                             {/* 件数表示 */}
@@ -842,7 +848,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   ? `【${workerNames[selectedWorkerUid || ""] || "ワーカー"}】さんの報告内容と作業時間を承認（検収完了）しますか？`
                   : modalType === "individual_reject"
                   ? `【${workerNames[selectedWorkerUid || ""] || "ワーカー"}】さんの報告を差し戻し、再稼働できる状態に戻しますか？`
-                  : "参加ワーカー全員の稼働時間を承認（検収完了）しますか？"
+                  : "参加ワーカー全員の稼働時間を承認し、この案件を検収完了にしますか？"
                 }
               </p>
 
