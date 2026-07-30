@@ -70,7 +70,17 @@ export default function OwnerJobsPage() {
         return { id: d.id, ...data, status: currentStatus };
       });
       
+      // 💡【並び替えロジック修正】緊急度順（3=至急 > 2=高め > 1=通常） ➔ 期日順 ➔ 登録日時順
       jobList.sort((a: any, b: any) => {
+        const urgencyA = Number(a.urgency) || 1;
+        const urgencyB = Number(b.urgency) || 1;
+        
+        // 1. 緊急度が高い順（数値が大きいものを上に）
+        if (urgencyA !== urgencyB) {
+          return urgencyB - urgencyA;
+        }
+
+        // 2. 緊急度が同じ場合は期日が近い順
         const deadlineA = a.deadline && typeof a.deadline === "string" && a.deadline.trim() !== "" ? a.deadline : "9999-12-31";
         const deadlineB = b.deadline && typeof b.deadline === "string" && b.deadline.trim() !== "" ? b.deadline : "9999-12-31";
         
@@ -78,6 +88,7 @@ export default function OwnerJobsPage() {
           return deadlineA.localeCompare(deadlineB);
         }
         
+        // 3. 期日も同じ場合は作成日時が新しい順
         const timeA = a["createdAt"]?.toDate ? a["createdAt"].toDate().getTime() : 0;
         const timeB = b["createdAt"]?.toDate ? b["createdAt"].toDate().getTime() : 0;
         return timeB - timeA;
@@ -103,7 +114,7 @@ export default function OwnerJobsPage() {
     return () => unsubscribe();
   }, []);
 
-  // 💡【タブ判定とステータスフィルターロジックの改善】
+  // 💡【タブ判定とステータスフィルターロジック】
   useEffect(() => {
     let result = [...allJobs];
 
@@ -117,7 +128,6 @@ export default function OwnerJobsPage() {
       });
     } 
     else if (activeTab === "completed") {
-      // 💡 参加ワーカーの中に1人でも「検収待ち (review)」または「完了 (completed)」の人がいるかチェック
       result = result.filter(job => {
         const workersList = job.workers ? Object.values(job.workers) : [];
         const hasReviewWorker = workersList.some((w: any) => w.status === "review");
@@ -126,7 +136,6 @@ export default function OwnerJobsPage() {
         return job.status === "review" || job.status === "completed" || hasReviewWorker || hasCompletedWorker;
       });
 
-      // 💡【ご要望を反映】「すべて」選択時（filterStatus === "all"）は、検収中（review）のみを表示し、完了（completed）は隠す
       if (filterStatus === "all") {
         result = result.filter(job => {
           const workersList = job.workers ? Object.values(job.workers) : [];
@@ -176,7 +185,6 @@ export default function OwnerJobsPage() {
     return j.status === "assigned" || j.status === "working" || j.status === "paused" || (j.status === "open" && hasWorker);
   }).length;
 
-  // 💡【バッジカウントの更新】「納品済（検収中）」バッジには、現在検収が必要な（1人でもreviewワーカーがいる）案件の件数をカウント表示
   const completedCount = allJobs.filter(j => {
     const workersList = j.workers ? Object.values(j.workers) : [];
     const hasReviewWorker = workersList.some((w: any) => w.status === "review");
@@ -232,7 +240,7 @@ export default function OwnerJobsPage() {
         <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div className="flex items-center gap-4 flex-wrap text-xs">
             <div className="text-sm font-black text-slate-700 min-w-[100px]">
-              表示件数: <span className="text-lg text-[#0082C8] font-black">{filteredJobs.length}</span> / {allJobs.length} 件
+              表示件数: <span className="text-lg text-[#5CA685] font-black">{filteredJobs.length}</span> / {allJobs.length} 件
             </div>
 
             {/* 進捗フェーズ切り替えタブ */}
@@ -240,9 +248,9 @@ export default function OwnerJobsPage() {
               <button
                 type="button"
                 onClick={() => handleTabChange('recruiting')}
-                className={`px-3 py-1.5 rounded text-[11px] font-black transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded text-[11px] font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'recruiting'
-                    ? 'bg-[#0082C8] text-white shadow-sm'
+                    ? 'bg-[#5CA685] text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
                 }`}
               >
@@ -254,7 +262,7 @@ export default function OwnerJobsPage() {
               <button
                 type="button"
                 onClick={() => handleTabChange('working')}
-                className={`px-3 py-1.5 rounded text-[11px] font-black transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded text-[11px] font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'working'
                     ? 'bg-indigo-600 text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
@@ -268,7 +276,7 @@ export default function OwnerJobsPage() {
               <button
                 type="button"
                 onClick={() => handleTabChange('completed')}
-                className={`px-3 py-1.5 rounded text-[11px] font-black transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded text-[11px] font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'completed'
                     ? 'bg-emerald-600 text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
@@ -281,13 +289,12 @@ export default function OwnerJobsPage() {
               </button>
             </div>
 
-            {/* 💡【ご要望を反映】アイコンを排除したシンプルなステータスフィルター */}
             <div className="flex items-center gap-2 border-l xl:border-l-2 border-slate-300 pl-2 xl:pl-4">
               <label className="font-black text-slate-500">ステータス:</label>
               <select 
                 value={filterStatus} 
                 onChange={(e) => setFilterStatus(e.target.value)}
-                className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#0082C8]"
+                className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#5CA685]"
               >
                 <option value="all">すべて</option>
                 {activeTab === 'recruiting' && (
@@ -318,7 +325,7 @@ export default function OwnerJobsPage() {
               <select 
                 value={filterJobType} 
                 onChange={(e) => setFilterJobType(e.target.value)}
-                className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#0082C8]"
+                className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#5CA685]"
               >
                 <option value="all">すべて表示</option>
                 <option value="form_posting">フォーム投稿</option>
@@ -331,7 +338,7 @@ export default function OwnerJobsPage() {
               <select 
                 value={filterUrgency} 
                 onChange={(e) => setFilterUrgency(e.target.value)}
-                className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#0082C8]"
+                className="bg-slate-50 border-2 border-slate-300 rounded px-2 py-1 font-bold text-slate-800 outline-none focus:border-[#5CA685]"
               >
                 <option value="all">すべて表示</option>
                 <option value="3">至急</option>
@@ -343,7 +350,7 @@ export default function OwnerJobsPage() {
 
           <Link 
             href="/owner/jobs/new"
-            className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded border border-black/10 transition-colors shadow-sm text-center whitespace-nowrap self-start xl:self-auto"
+            className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-xs font-black px-4 py-2 rounded border border-black/10 transition-colors shadow-sm text-center whitespace-nowrap self-start xl:self-auto"
           >
             ➕ 新規案件を作成する
           </Link>
@@ -425,7 +432,7 @@ export default function OwnerJobsPage() {
                           </div>
                         ) : (
                           <div className="space-y-1.5">
-                            <div className="text-[10px] font-mono font-black text-[#0082C8] text-right border-b border-slate-100 pb-0.5">
+                            <div className="text-[10px] font-mono font-black text-[#5CA685] text-right border-b border-slate-100 pb-0.5">
                               受託: {workerEntries.length} / {limit} 名
                             </div>
                             {workerEntries.map(([wUid, wData]: [string, any]) => {
@@ -471,7 +478,7 @@ export default function OwnerJobsPage() {
                       <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={job.title}>
                         <Link 
                           href={`/owner/jobs/${job.id}`} 
-                          className="hover:underline hover:text-[#0082C8] transition-colors block w-full truncate"
+                          className="hover:underline hover:text-[#5CA685] transition-colors block w-full truncate cursor-pointer"
                         >
                           {job.title}
                         </Link>
@@ -497,7 +504,7 @@ export default function OwnerJobsPage() {
                         <button
                           type="button"
                           onClick={() => triggerDeleteModal(job.id, job.title)}
-                          className="text-slate-300 hover:text-rose-600 transition-colors p-1 text-sm active:scale-95"
+                          className="text-slate-300 hover:text-rose-600 transition-colors p-1 text-sm active:scale-95 cursor-pointer"
                           title="この案件をデータベースから完全削除"
                         >
                           🗑️
@@ -526,7 +533,7 @@ export default function OwnerJobsPage() {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             
-            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
+            <div className="bg-[#5CA685] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
               <span>⚠️ 案件の完全削除確認</span>
             </div>
 
@@ -546,14 +553,14 @@ export default function OwnerJobsPage() {
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide cursor-pointer"
               >
                 キャンセル
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm cursor-pointer"
               >
                 完全に削除する
               </button>
@@ -579,7 +586,7 @@ export default function OwnerJobsPage() {
               <button
                 type="button"
                 onClick={() => setErrorModalMessage(null)}
-                className="px-5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs rounded shadow-sm"
+                className="px-5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs rounded shadow-sm cursor-pointer"
               >
                 OK
               </button>
