@@ -237,7 +237,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       } 
       
       else if (action === "approve") {
-        // 💡【修正点】人数枠（定員）に関わらず、一括承認を押した場合は案件全体も「completed（完了）」に確実に変更します
         const updates: any = {
           status: "completed",
           approvedAt: serverTimestamp(),
@@ -339,7 +338,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           updatedWorkers[workerUid].status = "assigned";
         }
 
-        // 差し戻した場合は全体ステータスも「assigned」または元の状態へ
         const finalJobStatus = job.status === "completed" ? "assigned" : job.status;
 
         await updateDoc(jobRef, {
@@ -643,17 +641,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                         </div>
 
                         <div className="p-3 bg-white space-y-3">
-                          
-                          {/* ワーカー報告件数 ＆ オーナー評価（★5評価）エリア */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200">
-                            
-                            {/* 件数表示 */}
                             <div className="flex items-center justify-between text-xs font-bold bg-white px-3 py-1.5 rounded border border-slate-200 shadow-2xs">
                               <span className="text-slate-500 text-[11px]">📊 ワーカー報告件数:</span>
                               <span className="font-mono text-sm font-black text-[#0082C8]">{wData.completedCount || 0} 件</span>
                             </div>
 
-                            {/* ★評価 (社内限定非公開) 選択・更新フォーム */}
                             <div className="flex items-center justify-between bg-white px-2.5 py-1 rounded border border-slate-200 shadow-2xs gap-1">
                               <span className="text-[10px] font-black text-slate-500 shrink-0">⭐ 社内評価:</span>
                               <div className="flex items-center gap-1.5">
@@ -685,10 +678,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                                 </button>
                               </div>
                             </div>
-
                           </div>
 
-                          {/* ワーカー提出メモ */}
                           <div className="space-y-1">
                             <span className="text-[9px] font-black text-slate-400 block uppercase">WORKER MEMO / ワーカーの提出メモ</span>
                             {wData.workerComment ? (
@@ -699,7 +690,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                               <div className="text-xs text-slate-400 italic bg-slate-50/50 p-2 rounded">メモの記録はまだありません</div>
                             )}
                           </div>
-
                         </div>
                       </div>
                     );
@@ -774,7 +764,8 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
-                {currentWorkerCount > 0 && job.status !== "draft" && (
+                {/* 💡【修正箇所】一括操作ボタンの表示条件に `job.status !== "completed"` を追加 */}
+                {currentWorkerCount > 0 && job.status !== "draft" && job.status !== "completed" && (
                   <div className="space-y-2 bg-slate-50 p-2.5 border border-slate-300 rounded">
                     <span className="text-[10px] font-black text-slate-400 block mb-1">全メンバー一括操作</span>
                     <button 
@@ -794,6 +785,13 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                     >
                       ↩ 参加者全員を一括差し戻し
                     </button>
+                  </div>
+                )}
+
+                {/* 💡【追加】完了済み（completed）の時の分かりやすい案内メッセージ */}
+                {job.status === "completed" && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-center rounded text-xs font-black select-none">
+                    ✨ この案件は検収完了（完了済み）です
                   </div>
                 )}
 
