@@ -18,7 +18,7 @@ export default function WorkerDetailPage({ params }: WorkerDetailPageProps) {
   
   const [worker, setWorker] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
-  const [stats, setStats] = useState({ totalSeconds: 0, completedCount: 0, avgRating: "-", rankBadge: "🔥 ROOKIE", rankColor: "bg-[#0082C8] text-white" });
+  const [stats, setStats] = useState({ totalSeconds: 0, completedCount: 0, avgRating: "-", rankBadge: "🔥 ROOKIE", rankColor: "bg-[#5CA685] text-white" });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,14 +30,14 @@ export default function WorkerDetailPage({ params }: WorkerDetailPageProps) {
         if (!wSnap.exists()) return;
         setWorker(wSnap.data());
 
-        // 💡【修正】確定データではなく「打刻ログ(workLogs)」からリアルタイムに累計稼働時間を算出
+        // 2. 打刻ログ(workLogs)からリアルタイムに累計稼働時間を算出
         const logsSnap = await getDocs(query(collection(db, "workLogs"), where("workerId", "==", id)));
         let totalSec = 0;
         logsSnap.forEach(d => {
           totalSec += (Number(d.data().seconds) || 0);
         });
 
-        // 3. 完了案件数と★評価の集計（jobsコレクションから）
+        // 3. 作業件数と★評価の集計（jobsコレクションから）
         const jobsSnap = await getDocs(collection(db, "jobs"));
         let completedCount = 0;
         let ratingSum = 0;
@@ -66,7 +66,7 @@ export default function WorkerDetailPage({ params }: WorkerDetailPageProps) {
         // 4. ランク判定
         const totalHours = Math.floor(totalSec / 3600);
         let rankBadge = "🔥 ROOKIE";
-        let rankColor = "bg-[#0082C8] text-white";
+        let rankColor = "bg-[#5CA685] text-white";
 
         if (totalHours >= 100) { rankBadge = "👑 PLATINUM"; rankColor = "bg-slate-800 text-slate-100"; }
         else if (totalHours >= 50) { rankBadge = "🥇 GOLD"; rankColor = "bg-yellow-500 text-yellow-50"; }
@@ -175,15 +175,16 @@ export default function WorkerDetailPage({ params }: WorkerDetailPageProps) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-300 text-center">
             
-            <div className="p-5 space-y-1 bg-blue-50/40">
+            <div className="p-5 space-y-1 bg-emerald-50/30">
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">リアルタイム累計稼働時間</span>
-              <p className="text-2xl font-black text-[#0082C8] tracking-tight font-mono pt-1">
+              <p className="text-2xl font-black text-[#5CA685] tracking-tight font-mono pt-1">
                 {formatHM(stats.totalSeconds)}
               </p>
             </div>
 
             <div className="p-5 space-y-1 flex flex-col justify-center bg-white">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">累計納品件数</span>
+              {/* 💡 表記の修正: 累計納品件数 → 累計作業件数 */}
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">累計作業件数</span>
               <p className="text-2xl font-black text-slate-900 font-mono pt-1">
                 {stats.completedCount} <span className="text-[11px] font-bold text-slate-500">件</span>
               </p>
@@ -210,9 +211,9 @@ export default function WorkerDetailPage({ params }: WorkerDetailPageProps) {
               <div key={log.id} className="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
                 <div className="min-w-0 flex-1 pr-4">
                   <div className="text-[11px] font-black text-slate-800 truncate mb-1" title={log.jobTitle}>{log.jobTitle || "無題の案件"}</div>
-                  <div className="text-[10px] text-slate-500 font-mono font-bold">{log.timestamp?.toDate().toLocaleString()}</div>
+                  <div className="text-[10px] text-slate-500 font-mono font-bold">{log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : "-"}</div>
                 </div>
-                <div className="text-[11px] font-black text-[#0082C8] bg-blue-50 border border-blue-200 px-2 py-1 rounded font-mono shrink-0 shadow-2xs">
+                <div className="text-[11px] font-black text-[#5CA685] bg-emerald-50 border border-emerald-200 px-2 py-1 rounded font-mono shrink-0 shadow-2xs">
                   {Math.floor(log.seconds / 3600)}h {Math.floor((log.seconds % 3600) / 60)}m {log.seconds % 60}s
                 </div>
               </div>

@@ -33,13 +33,18 @@ export default function WorkerProfilePage() {
           const userSnap = await getDoc(userDocRef);
           const userData = userSnap.exists() ? userSnap.data() : {};
 
-          // 2. 完了案件数の自動集計（自分が参加してcompletedになった案件をカウント）
+          // 2. 作業件数の自動集計（各案件で入力したcompletedCountを合算）
           const jobsSnap = await getDocs(collection(db, "jobs"));
           let completedCount = 0;
           jobsSnap.forEach(d => {
             const jobData = d.data();
-            if (jobData.workers && jobData.workers[user.uid] && jobData.workers[user.uid].status === "completed") {
-              completedCount++;
+            if (jobData.workers && jobData.workers[user.uid]) {
+              const wInfo = jobData.workers[user.uid];
+              if (wInfo.completedCount) {
+                completedCount += Number(wInfo.completedCount || 0);
+              } else if (wInfo.status === "completed" || jobData.status === "completed") {
+                completedCount += 1;
+              }
             }
           });
 
@@ -64,7 +69,7 @@ export default function WorkerProfilePage() {
             ? new Date(user.metadata.creationTime).toLocaleDateString('ja-JP') 
             : "不明";
 
-          // 新しいランク定義と目標時間の計算
+          // ランク定義と目標時間の計算
           const totalHours = Math.floor(totalSec / 3600);
           let calculatedRank = "ROOKIE";
           let nextTargetHours = 10;
@@ -138,13 +143,13 @@ export default function WorkerProfilePage() {
     const s = totalSeconds || 0;
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
-    return `${h}h ${m}m`;
+    return `${h}h ${m}`;
   };
 
   if (loading) return <WorkerShell title="マイプロファイル"><div className="p-10 text-center text-slate-400 text-xs font-bold">個人実績データを照合中...</div></WorkerShell>;
   if (!userProfile) return <WorkerShell title="マイプロファイル"><div className="p-10 text-center text-rose-600 font-bold text-xs">ログインセッションの確認に失敗しました。</div></WorkerShell>;
 
-  // ランク計算用の定数（💡 エラー原因だった変数をここで正しく宣言）
+  // ランク計算用の定数
   const currentRank = userProfile.rank || "ROOKIE";
   const currentSeconds = userProfile.totalAccumulatedSeconds || 0;
   const currentHours = Math.floor(currentSeconds / 3600);
@@ -153,13 +158,13 @@ export default function WorkerProfilePage() {
   // PLATINUM（最高ランク）の場合は100%にする
   const progressPercent = currentHours >= 100 ? 100 : Math.min(100, Math.floor((currentHours / targetHours) * 100));
 
-  // ランク全体マップの定義
+  // ランク全体マップの定義（カラーをセージグリーンに変更）
   const rankMap = [
     { name: "PLATINUM", hours: 100, color: "bg-slate-800 text-slate-100", icon: "👑" },
     { name: "GOLD", hours: 50, color: "bg-yellow-500 text-yellow-50", icon: "🥇" },
     { name: "SILVER", hours: 30, color: "bg-slate-400 text-white", icon: "🥈" },
     { name: "BRONZE", hours: 10, color: "bg-orange-700 text-orange-50", icon: "🥉" },
-    { name: "ROOKIE", hours: 0, color: "bg-[#0082C8] text-white", icon: "🔥" },
+    { name: "ROOKIE", hours: 0, color: "bg-[#5CA685] text-white", icon: "🔥" },
   ];
 
   return (
@@ -176,7 +181,7 @@ export default function WorkerProfilePage() {
                 <div className="flex items-center gap-3">
                   <h1 className="text-lg font-black tracking-tight text-slate-950">{userProfile.displayName}</h1>
                   <span className={`font-black text-xs md:text-sm px-3 py-1 rounded shadow-sm inline-flex items-center gap-1 uppercase tracking-wider select-none ${
-                    rankMap.find(r => r.name === currentRank)?.color || "bg-[#0082C8] text-white"
+                    rankMap.find(r => r.name === currentRank)?.color || "bg-[#5CA685] text-white"
                   }`}>
                     {rankMap.find(r => r.name === currentRank)?.icon} {currentRank}
                   </span>
@@ -272,7 +277,8 @@ export default function WorkerProfilePage() {
               </div>
 
               <div className="p-5 space-y-1 flex flex-col justify-center">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">完了案件数</span>
+                {/* 💡 表記の修正: 完了案件数 → 累計作業件数 */}
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">累計作業件数</span>
                 <p className="text-2xl font-black text-slate-900 font-mono pt-1">
                   {userProfile.completedJobsCount} <span className="text-xs font-bold text-slate-500">件</span>
                 </p>
@@ -340,7 +346,7 @@ export default function WorkerProfilePage() {
 
               <div className="w-full bg-slate-100 border-2 border-slate-300 h-6 rounded overflow-hidden relative shadow-inner">
                 <div 
-                  className="bg-emerald-500 h-full border-r-2 border-slate-950 transition-all duration-500 ease-out"
+                  className="bg-[#5CA685] h-full border-r-2 border-slate-950 transition-all duration-500 ease-out"
                   style={{ width: `${progressPercent}%` }}
                 />
                 <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono font-black text-slate-800 drop-shadow-sm pointer-events-none uppercase">
@@ -361,11 +367,11 @@ export default function WorkerProfilePage() {
                 const isCurrent = rank.name === currentRank;
                 return (
                   <div key={rank.name} className={`flex items-center justify-between p-2.5 rounded border-2 transition-all ${
-                    isCurrent ? 'bg-blue-50 border-[#0082C8] shadow-sm' : 'bg-white border-slate-100 opacity-60'
+                    isCurrent ? 'bg-emerald-50 border-[#5CA685] shadow-sm' : 'bg-white border-slate-100 opacity-60'
                   }`}>
                     <div className="flex items-center gap-2">
                       <span className="text-lg">{rank.icon}</span>
-                      <span className={`text-xs font-black tracking-wide ${isCurrent ? 'text-[#0082C8]' : 'text-slate-600'}`}>
+                      <span className={`text-xs font-black tracking-wide ${isCurrent ? 'text-[#5CA685]' : 'text-slate-600'}`}>
                         {rank.name}
                       </span>
                     </div>

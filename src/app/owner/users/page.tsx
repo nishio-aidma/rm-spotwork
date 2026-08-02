@@ -126,14 +126,11 @@ export default function OwnerWorkersPage() {
           Object.keys(jData.workers).forEach(wUid => {
             const wInfo = jData.workers[wUid];
             
-            // 💡【修正点】completedCountプロパティだけでなく、完了ステータスや完了判定も含めて正しく+1カウント
             const isCompleted = wInfo.status === "completed" || jData.status === "completed" || Boolean(wInfo.completedCount);
             if (isCompleted) {
               const inc = Number(wInfo.completedCount) > 0 ? Number(wInfo.completedCount) : 1;
               countMap[wUid] = (countMap[wUid] || 0) + inc;
             } else {
-              // 進行中・割り当て済みの案件もカウントする場合はこちら（必要に応じて）
-              // 割り当てがある時点で最低1件カウントしたい場合は以下を有効化できます
               countMap[wUid] = (countMap[wUid] || 0) + (Number(wInfo.completedCount) || 1);
             }
             
@@ -155,7 +152,7 @@ export default function OwnerWorkersPage() {
         // ランク判定
         let rank = "ROOKIE";
         let rankBadge = "🔥 ROOKIE";
-        let rankColor = "bg-[#0082C8] text-white";
+        let rankColor = "bg-[#5CA685] text-white";
 
         if (totalHours >= 100) {
           rank = "PLATINUM"; rankBadge = "👑 PLATINUM"; rankColor = "bg-slate-800 text-slate-100";
@@ -293,7 +290,7 @@ export default function OwnerWorkersPage() {
         <div className="bg-white p-4 rounded border-2 border-slate-300 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4 flex-wrap text-xs">
             <div className="text-sm font-black text-slate-700 min-w-[120px]">
-              登録総アカウント数: <span className="text-lg text-[#0082C8] font-black">{users.length}</span> 名
+              登録総アカウント数: <span className="text-lg text-[#5CA685] font-black">{users.length}</span> 名
             </div>
 
             <div className="flex bg-slate-100 p-1 rounded border border-slate-300 gap-1 select-none">
@@ -302,7 +299,7 @@ export default function OwnerWorkersPage() {
                 onClick={() => setActiveTab('directory')}
                 className={`px-4 py-1.5 rounded text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'directory'
-                    ? 'bg-[#0082C8] text-white shadow-sm'
+                    ? 'bg-[#5CA685] text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
                 }`}
               >
@@ -325,7 +322,7 @@ export default function OwnerWorkersPage() {
 
           <Link 
             href="/owner/users/new"
-            className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-xs font-black px-4 py-2 rounded border border-black/10 transition-colors shadow-sm text-center whitespace-nowrap self-start sm:self-auto cursor-pointer"
+            className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-xs font-black px-4 py-2 rounded border border-black/10 transition-colors shadow-sm text-center whitespace-nowrap self-start sm:self-auto cursor-pointer"
           >
             ➕ 新規スタッフを登録する
           </Link>
@@ -367,7 +364,7 @@ export default function OwnerWorkersPage() {
                             <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>
                               <Link 
                                 href={`/owner/users/${u.id}`} 
-                                className="text-slate-900 hover:text-[#0082C8] hover:underline transition-colors block truncate cursor-pointer"
+                                className="text-slate-900 hover:text-[#5CA685] hover:underline transition-colors block truncate cursor-pointer"
                               >
                                 {fullName} {isMe && <span className="text-[10px] text-slate-400 font-normal">（あなた）</span>}
                               </Link>
@@ -376,7 +373,7 @@ export default function OwnerWorkersPage() {
                             <td className="p-3 border-r border-slate-200 text-slate-600 font-mono truncate" title={u.email}>{u.email}</td>
                             <td className="p-3 border-r border-slate-200 text-slate-500 truncate">{u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString() : "-"}</td>
                             <td className="p-3 text-center flex items-center justify-center gap-3">
-                              <Link href={`/owner/users/${u.id}`} className="text-[#0082C8] hover:underline font-black text-[11px] cursor-pointer">詳細 →</Link>
+                              <Link href={`/owner/users/${u.id}`} className="text-[#5CA685] hover:underline font-black text-[11px] cursor-pointer">詳細 →</Link>
                               {!isMe ? (
                                 <button onClick={() => triggerDeleteModal(u.id, fullName)} className="text-slate-300 hover:text-rose-600 transition-colors p-1 cursor-pointer" title="削除">🗑️</button>
                               ) : <div className="w-5" />}
@@ -406,7 +403,8 @@ export default function OwnerWorkersPage() {
                         <th className="p-3 border-r border-slate-300 w-40">スタッフ氏名</th>
                         <th className="p-3 border-r border-slate-300 w-32 text-center">ランク</th>
                         <th className="p-3 border-r border-slate-300 w-32 text-right">リアルタイム累計時間</th>
-                        <th className="p-3 border-r border-slate-300 w-28 text-right">累計件数</th>
+                        {/* 💡 表記の見直し：実態（未納品分を含む作業総数）に合わせて「累計作業件数」へ明確化 */}
+                        <th className="p-3 border-r border-slate-300 w-32 text-right">累計作業件数</th>
                         <th className="p-3 border-r border-slate-300 w-28 text-center">平均社内評価</th>
                         <th className="p-3 border-r border-slate-300">連絡先（メール）</th>
                         <th className="p-3 w-28 text-center">操作</th>
@@ -420,7 +418,7 @@ export default function OwnerWorkersPage() {
                           completedCount: 0,
                           avgRating: "-",
                           rankBadge: "🔥 ROOKIE",
-                          rankColor: "bg-[#0082C8] text-white"
+                          rankColor: "bg-[#5CA685] text-white"
                         };
 
                         return (
@@ -432,7 +430,7 @@ export default function OwnerWorkersPage() {
                             <td className="p-3 border-r border-slate-200 font-bold text-slate-900 truncate" title={fullName}>
                               <Link 
                                 href={`/owner/users/${u.id}`} 
-                                className="text-slate-900 hover:text-[#0082C8] hover:underline transition-colors block truncate cursor-pointer font-black"
+                                className="text-slate-900 hover:text-[#5CA685] hover:underline transition-colors block truncate cursor-pointer font-black"
                               >
                                 {fullName}
                               </Link>
@@ -446,11 +444,11 @@ export default function OwnerWorkersPage() {
                             </td>
 
                             {/* リアルタイム累計時間 */}
-                            <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-[#0082C8] bg-blue-50/20">
+                            <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-sm text-[#5CA685] bg-emerald-50/20">
                               {formatHM(stats.totalSeconds)}
                             </td>
 
-                            {/* 累計こなした件数 */}
+                            {/* 累計作業件数 */}
                             <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-xs text-slate-800">
                               {stats.completedCount} <span className="text-[10px] font-normal text-slate-400">件</span>
                             </td>
@@ -471,7 +469,7 @@ export default function OwnerWorkersPage() {
                             </td>
 
                             <td className="p-3 text-center flex items-center justify-center gap-3">
-                              <Link href={`/owner/users/${u.id}`} className="text-[#0082C8] hover:underline font-black text-[11px] cursor-pointer">詳細 →</Link>
+                              <Link href={`/owner/users/${u.id}`} className="text-[#5CA685] hover:underline font-black text-[11px] cursor-pointer">詳細 →</Link>
                               <button onClick={() => triggerDeleteModal(u.id, fullName)} className="text-slate-300 hover:text-rose-600 transition-colors p-1 cursor-pointer" title="削除">🗑️</button>
                             </td>
                           </tr>
@@ -531,7 +529,7 @@ export default function OwnerWorkersPage() {
                 <button
                   type="button"
                   onClick={() => setViewDate(new Date())}
-                  className="text-[11px] font-black text-[#0082C8] hover:underline uppercase tracking-tight cursor-pointer"
+                  className="text-[11px] font-black text-[#5CA685] hover:underline uppercase tracking-tight cursor-pointer"
                 >
                   今月（当月）へ戻る
                 </button>
@@ -544,7 +542,7 @@ export default function OwnerWorkersPage() {
                 <h3 className="text-xs font-black text-slate-500 tracking-wider">ワーカー並列タイムライン</h3>
               </div>
               {calendarLoading && (
-                <span className="text-[11px] font-bold text-[#0082C8] animate-pulse">
+                <span className="text-[11px] font-bold text-[#5CA685] animate-pulse">
                   🔄 Googleカレンダーから {viewDate.getMonth() + 1}月度のデータをリアルタイム同期中...
                 </span>
               )}
@@ -561,11 +559,11 @@ export default function OwnerWorkersPage() {
                         <th 
                           key={day.ymd} 
                           className={`p-3 border-r border-slate-300 text-center font-mono w-24 ${
-                            day.isToday ? 'bg-blue-50/80 text-[#0082C8] font-black' : ''
+                            day.isToday ? 'bg-emerald-50/80 text-[#5CA685] font-black' : ''
                           }`}
                         >
                           {day.label}
-                          {day.isToday && <span className="text-[9px] bg-[#0082C8] text-white px-1 rounded ml-1 block sm:inline-block font-sans uppercase">本日</span>}
+                          {day.isToday && <span className="text-[9px] bg-[#5CA685] text-white px-1 rounded ml-1 block sm:inline-block font-sans uppercase">本日</span>}
                         </th>
                       ))}
                     </tr>
@@ -580,7 +578,7 @@ export default function OwnerWorkersPage() {
                           <td className="p-3 border-r border-slate-200 font-bold text-slate-900 bg-white sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
                             <Link 
                               href={`/owner/users/${worker.id}`} 
-                              className="text-slate-900 hover:text-[#0082C8] hover:underline block truncate cursor-pointer font-bold"
+                              className="text-slate-900 hover:text-[#5CA685] hover:underline block truncate cursor-pointer font-bold"
                               title={fullName}
                             >
                               {fullName}
@@ -597,7 +595,7 @@ export default function OwnerWorkersPage() {
                               <td 
                                 key={day.ymd} 
                                 className={`p-2 border-r border-slate-200 text-center transition-all ${
-                                  day.isToday ? 'bg-blue-50/10' : ''
+                                  day.isToday ? 'bg-emerald-50/10' : ''
                                 }`}
                               >
                                 {calendarLoading ? (
@@ -676,7 +674,7 @@ export default function OwnerWorkersPage() {
       {infoModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
-            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs select-none">
+            <div className="bg-[#5CA685] text-white px-4 py-3 font-black text-xs select-none">
               <span>{infoModalTitle}</span>
             </div>
             <div className="p-6 bg-white">

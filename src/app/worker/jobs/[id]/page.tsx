@@ -26,7 +26,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
   const [workerComment, setWorkerComment] = useState("");
   const [isSavingComment, setIsSavingComment] = useState(false);
 
-  // 💡【新機能】実際に作業した「件数（成果量）」を管理するステート
+  // 実際に作業した「件数（成果量）」を管理するステート
   const [completedCountInput, setCompletedCountInput] = useState<number | "">(0);
 
   // カスタムポップアップ（モーダル）用の管理ステート
@@ -50,7 +50,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           if (snap.exists()) {
             const data = snap.data() as any;
             
-            // 💡【過去データの救済処置】
             let processedJob = { id: snap.id, ...data };
             if (data.workerId && !data.workers) {
               processedJob.workers = {
@@ -67,7 +66,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             
             setJob(processedJob);
             
-            // ログインしている「あなた（自分自身）」専用の枠から、保存済みのメモと件数を復元します
+            // ログインしているワーカー専用の枠からメモと件数を復元
             if (processedJob.workers?.[user.uid]) {
               setWorkerComment(processedJob.workers[user.uid].workerComment || "");
               setCompletedCountInput(processedJob.workers[user.uid].completedCount || 0);
@@ -89,7 +88,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     return () => unsubscribe();
   }, [id, router]);
 
-  // 時間を時・分・秒のきれいな文字列に変換する関数
+  // 時間を時・分・秒の文字列に変換
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -97,7 +96,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     return `${h}h ${m}m ${sec}s`;
   };
 
-  // 開始された「時刻」を見やすくフォーマットする関数
+  // 開始時刻を見やすくフォーマット
   const formatStartTime = (timestamp: any) => {
     if (!timestamp) return "";
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
@@ -107,7 +106,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     return `${h}:${m}:${s}`;
   };
 
-  // クリップボードへの一撃コピー関数
+  // クリップボードコピー
   const handleCopyToClipboard = (text: string, fieldName: string) => {
     if (!text || text === "-") return;
     navigator.clipboard.writeText(text).then(() => {
@@ -137,7 +136,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     }
   };
 
-  // テキストエリアの内容と作業件数をワーカー個別のカルテ領域へ一時保存する関数
+  // メモと件数の一時保存関数
   const handleSaveComment = async () => {
     if (!job || !currentUser) return;
     setIsSavingComment(true);
@@ -145,7 +144,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       const jobRef = doc(db, "jobs", job.id);
       const countVal = Number(completedCountInput) || 0;
       
-      // 自分専用のカルテ（workers > 自分のID）にメモと件数を保存
       await updateDoc(jobRef, {
         [`workers.${currentUser.uid}.workerComment`]: workerComment,
         [`workers.${currentUser.uid}.completedCount`]: countVal,
@@ -176,7 +174,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     }
   };
 
-  // ポップアップを起動する窓口
+  // ポップアップ（モーダル）を起動する関数
   const triggerModal = (type: "accept" | "start" | "pause" | "complete" | "save_success") => {
     setModalActionType(type);
     if (type === "accept") {
@@ -187,20 +185,19 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       setModalMessage("これより作業を開始します。よろしいですか？\n※あなた個人の『開始時刻』が個別に記録・集計されます。");
     } else if (type === "pause") {
       setModalTitle("⏸️ 作業を一時中断する");
-      setModalMessage("休憩や中断のため、タイマーを停止しますか？\n※計測された時間は分刻み（端数切り捨て）で集計され、実績に合算保存されます。");
+      setModalMessage("これまでの作業内容を一時保存してタイマーを停止します。\n以下に今回の作業件数を入力してください。");
     } else if (type === "complete") {
-      const currentCountVal = Number(completedCountInput) || 0;
       setModalTitle("🏁 完了報告を提出する");
-      setModalMessage(`本日の作業をすべて終了し、オーナーへ提出しますか？\n\n【今回提出する実績件数】: ${currentCountVal} 件\n\n※あなた以外の受託メンバーが全員完了報告を出し終えた時点で、案件全体が自動的に『検収待ち』状態へと移行します。`);
+      setModalMessage("本日の作業をすべて終了し、オーナーへ提出します。\n以下に最終的な作業件数を入力してください。");
     }
     else if (type === "save_success") {
       setModalTitle("✨ 一時保存完了");
-      setModalMessage("報告コメントおよび作業件数をあなた専用のデータ枠へ安全に一時保存しました！\n\nこの内容はいつでも書き換え可能で、『作業を完了する』ボタンを押した際に最終実績としてオーナーへ自動提出されます。");
+      setModalMessage("報告コメントおよび作業件数をあなた専用のデータ枠へ安全に一時保存しました！");
     }
     setModalOpen(true);
   };
 
-  // ポップアップ内で「はい、実行する」を押したときの確定処理
+  // モーダル内で「はい、実行する」を押したときの確定処理
   const handleModalConfirm = async () => {
     setModalOpen(false);
     if (!modalActionType || !job || !currentUser) return;
@@ -225,7 +222,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
       if (modalActionType === "accept") {
         if (currentWorkerCount >= limit) {
           setModalTitle("⚠️ 定員到達");
-          setModalMessage("申し訳ありません。この案件はすでに募集定員（上限人数）に達したため受諾できません。");
+          setModalMessage("申し訳ありません。この案件はすでに募集定員に達したため受諾できません。");
           setModalActionType("save_success");
           setModalOpen(true);
           setSubmitting(false);
@@ -234,7 +231,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
         const newWorkerCount = currentWorkerCount + 1;
         const isNowFull = newWorkerCount >= limit;
-
         const finalOverallStatus = isNowFull ? "assigned" : "open";
 
         await updateDoc(jobRef, {
@@ -286,9 +282,13 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           finalSeconds = Math.max(baseSeconds, baseSeconds + sessionSeconds);
         }
 
+        const countVal = Number(completedCountInput) || 0;
+
         await updateDoc(jobRef, {
           [`workers.${currentUser.uid}.status`]: "paused",
           [`workers.${currentUser.uid}.totalAccumulatedSeconds`]: finalSeconds,
+          [`workers.${currentUser.uid}.completedCount`]: countVal, // 💡 入力された件数を保存
+          [`workers.${currentUser.uid}.workerComment`]: workerComment,
           status: finalOverallStatus, 
           updatedAt: serverTimestamp()
         });
@@ -344,7 +344,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           [`workers.${currentUser.uid}.status`]: "review",
           [`workers.${currentUser.uid}.totalAccumulatedSeconds`]: finalSeconds,
           [`workers.${currentUser.uid}.workerComment`]: workerComment, 
-          [`workers.${currentUser.uid}.completedCount`]: countVal, // 💡 実績件数を確定保存
+          [`workers.${currentUser.uid}.completedCount`]: countVal, // 💡 確定件数を保存
           [`workers.${currentUser.uid}.submittedAt`]: serverTimestamp(),
           status: finalJobStatus, 
           updatedAt: serverTimestamp()
@@ -410,7 +410,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             <button 
               type="button"
               onClick={() => router.push(backUrl)} 
-              className="bg-slate-100 border-2 border-slate-400 hover:bg-slate-200 text-slate-800 text-[11px] font-black px-4 py-1.5 rounded transition-all active:scale-95 shadow-sm"
+              className="bg-slate-100 border-2 border-slate-400 hover:bg-slate-200 text-slate-800 text-[11px] font-black px-4 py-1.5 rounded transition-all active:scale-95 shadow-sm cursor-pointer"
             >
               {backText}
             </button>
@@ -431,7 +431,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                 <button
                   type="button"
                   onClick={() => handleCopyToClipboard(job.title, "title")}
-                  className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded p-1 text-[10px] font-black transition-all shadow-sm flex items-center gap-1 active:scale-95"
+                  className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded p-1 text-[10px] font-black transition-all shadow-sm flex items-center gap-1 active:scale-95 cursor-pointer"
                   title="タイトルをコピー"
                 >
                   📋 <span className="text-[9px] text-slate-600 font-black">COPY</span>
@@ -465,7 +465,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                     <button
                       type="button"
                       onClick={() => handleCopyToClipboard(job.scClient, "scClient")}
-                      className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded px-1.5 py-0.5 text-[9px] font-black transition-all active:scale-95"
+                      className="bg-slate-50 hover:bg-slate-200 text-slate-500 border border-slate-300 rounded px-1.5 py-0.5 text-[9px] font-black transition-all active:scale-95 cursor-pointer"
                       title="クライアント名をコピー"
                     >
                       📋
@@ -583,11 +583,11 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                 💬 実績報告 / 作業メモ入力
               </h2>
               
-              {/* 💡【新設】実際にこなした実績件数の入力フォーム */}
+              {/* 実際にこなした実績件数の入力フォーム */}
               <div className="bg-white p-3 rounded border-2 border-emerald-200/80 space-y-1.5 shadow-xs">
                 <label className="text-[11px] font-black text-slate-800 flex items-center justify-between">
-                  <span>📊 今回完了した実際の作業件数</span>
-                  <span className="text-[10px] font-normal text-slate-400">（予定: {job.count || 0} 件）</span>
+                  <span>📊 これまでに完了した累積件数</span>
+                  <span className="text-[10px] font-normal text-slate-400">（目標予定: {job.count || 0} 件）</span>
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -605,7 +605,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
               <div className="space-y-1.5">
                 <p className="text-[10px] text-emerald-800/80 font-bold leading-relaxed select-none">
-                  ※作業中に気づいた点やオーナーへの引き継ぎ内容を自由にメモ・一時保存できます。右の「作業を完了する」ボタンを押した際に件数とメモが自動提出されます。
+                  ※作業中に気づいた点やオーナーへの引き継ぎ内容を自由にメモ・一時保存できます。右の「作業を完了する」ボタンを押した際にも最新件数が自動提出されます。
                 </p>
                 <textarea
                   value={workerComment}
@@ -773,7 +773,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
       </div>
 
-      {/* シンプルモダンデザインモーダル */}
+      {/* 💡【改良】件数入力枠を備えたカスタムモーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
@@ -782,10 +782,39 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               <span>{modalTitle}</span>
             </div>
 
-            <div className="p-6 bg-white">
+            <div className="p-6 bg-white space-y-4">
               <p className="text-xs font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
                 {modalMessage}
               </p>
+
+              {/* 💡 一時停止(pause)または完了報告(complete)の際に、モーダル内で直感的に件数を入力させるフォーム */}
+              {(modalActionType === "pause" || modalActionType === "complete") && (
+                <div className="bg-slate-50 p-3 rounded border-2 border-emerald-300 space-y-2">
+                  <div className="text-[11px] font-black text-slate-700 flex justify-between items-center">
+                    <span>📊 これまでの累計完了件数</span>
+                    <span className="text-xs font-mono font-black text-[#5CA685]">
+                      {completedCountInput || 0} 件
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 block">
+                      最新の累計作業件数を更新入力してください:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={completedCountInput}
+                        onChange={(e) => setCompletedCountInput(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder="例: 50"
+                        className="w-full border-2 border-slate-300 rounded px-3 py-1.5 text-sm font-mono font-black text-slate-900 bg-white outline-none focus:border-[#5CA685]"
+                      />
+                      <span className="text-xs font-black text-slate-700 shrink-0">件</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
