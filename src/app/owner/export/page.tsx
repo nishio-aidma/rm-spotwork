@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, getDocs, where, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, getDocs, where, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import OwnerShell from "@/components/OwnerShell";
@@ -14,9 +14,13 @@ export default function OwnerExportPage() {
   const [loadingData, setLoadingData] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // 代理確定モーダル制御用ステート
+  // 代理確定（月次締め）モーダル用ステート
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [targetWorker, setTargetWorker] = useState<{ id: string; name: string } | null>(null);
+
+  // 💡【追加】個別の未確認稼働ログを一覧表示・一括承認するためのモーダル用ステート
+  const [uncheckedModalOpen, setUncheckedModalOpen] = useState(false);
+  const [targetUncheckedWorker, setTargetUncheckedWorker] = useState<any>(null);
 
   // カスタム通知モーダル用ステート
   const [infoModalOpen, setInfoModalOpen] = useState(false);
@@ -34,9 +38,8 @@ export default function OwnerExportPage() {
     if (!user) return;
     setLoadingData(true);
     try {
-      const currentMonthStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`; // 例: "2026-07"
+      const currentMonthStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
 
-      // jobs（案件）、users（ワーカー）、月次確定ステータス、稼働ログ（workLogs）を全取得
       const [jobSnap, userSnap, statusSnap, logSnap] = await Promise.all([
         getDocs(collection(db, "jobs")),
         getDocs(query(collection(db, "users"), where("role", "==", "worker"))),
@@ -44,13 +47,11 @@ export default function OwnerExportPage() {
         getDocs(collection(db, "workLogs"))
       ]);
 
-      // ワーカーIDから名前を引ける辞書
       const userMap = Object.fromEntries(userSnap.docs.map(d => [
         d.id, 
         `${d.data().lastName || ""} ${d.data().firstName || ""}`.trim() || d.data().name || "不明"
       ]));
 
-      // ワーカーごとの月次確定ステータスを引ける辞書を作成
       const statusMap: { [key: string]: string } = {};
       statusSnap.docs.forEach(d => {
         const sData = d.data();
@@ -63,11 +64,10 @@ export default function OwnerExportPage() {
       const targetYear = viewDate.getFullYear();
       const targetMonth = viewDate.getMonth();
 
-      // ロジック①：まずは「jobs」から案件の請負数・完了数を集計
+      // ① jobsからの請負数・完了数集計
       jobSnap.docs.forEach(d => {
         const job = d.data();
         const wId = job.workerId;
-
         if (!wId || job.status === "open" || job.status === "draft") return;
 
         const jobTimestamp = job.updatedAt || job.createdAt;
@@ -78,31 +78,24 @@ export default function OwnerExportPage() {
           if (isCurrentMonth) {
             if (!workerAgg[wId]) {
               workerAgg[wId] = { 
-                workerId: wId,
-                name: userMap[wId] || "不明のワーカー", 
-                activeDays: new Set(), 
-                acceptedCount: 0, 
-                completedCount: 0, 
-                totalSeconds: 0,
-                submissionStatus: statusMap[wId] || "none" 
+                workerId: wId, name: userMap[wId] || "不明のワーカー", 
+                activeDays: new Set(), acceptedCount: 0, completedCount: 0, totalSeconds: 0,
+                submissionStatus: statusMap[wId] || "none",
+                uncheckedLogs: [] // 💡【追加】未確認ログを格納する箱
               };
             }
-
-            const w = workerAgg[wId];
-            w.acceptedCount++;
-
+            workerAgg[wId].acceptedCount++;
             if (job.status === "completed") {
-              w.completedCount++;
+              workerAgg[wId].completedCount++;
             }
           }
         }
       });
 
-      // ロジック②：手動追加分を含む「workLogs」から、正確な稼働時間と活動日数を集計
+      // ② workLogsからの稼働時間集計および「未確認ログ」の抽出
       logSnap.docs.forEach(d => {
         const log = d.data();
         const wId = log.workerId;
-
         if (!wId) return;
 
         let endTime = null;
@@ -126,19 +119,27 @@ export default function OwnerExportPage() {
         if (isCurrentMonth) {
           if (!workerAgg[wId]) {
             workerAgg[wId] = { 
-              workerId: wId,
-              name: userMap[wId] || "不明のワーカー", 
-              activeDays: new Set(), 
-              acceptedCount: 0, 
-              completedCount: 0, 
-              totalSeconds: 0,
-              submissionStatus: statusMap[wId] || "none" 
+              workerId: wId, name: userMap[wId] || "不明のワーカー", 
+              activeDays: new Set(), acceptedCount: 0, completedCount: 0, totalSeconds: 0,
+              submissionStatus: statusMap[wId] || "none",
+              uncheckedLogs: [] // 💡【追加】未確認ログを格納する箱
             };
           }
 
           const w = workerAgg[wId];
           w.totalSeconds += (Number(log.seconds) || 0);
           w.activeDays.add(startTime.toDateString());
+
+          // 💡【追加】日々の稼働で「本人確認済」になっていない（checkedがfalse）ものをピックアップ
+          if (log.checked !== true) {
+            w.uncheckedLogs.push({
+              id: d.id,
+              jobTitle: log.jobTitle || "手動登録タスク",
+              startTime: startTime,
+              endTime: endTime,
+              seconds: log.seconds
+            });
+          }
         }
       });
 
@@ -159,7 +160,34 @@ export default function OwnerExportPage() {
     if (!authLoading) fetchSummary(); 
   }, [viewDate, user, authLoading]);
 
-  // オーナーによる代理確定（月締め手動承認）の実行関数
+  // 💡【追加機能】個別の未確認稼働ログを一覧からオーナーが代理で一括確認済みにする処理
+  const handleApproveUncheckedLogs = async () => {
+    if (!targetUncheckedWorker) return;
+    setSubmitting(true);
+    try {
+      const logsToApprove = targetUncheckedWorker.uncheckedLogs;
+      
+      // 未確認の稼働ログの数だけ、一気にFirestoreの「checked」をtrue（確認済み）に更新する
+      await Promise.all(logsToApprove.map((log: any) => 
+        updateDoc(doc(db, "workLogs", log.id), {
+          checked: true,
+          updatedAt: serverTimestamp()
+        })
+      ));
+
+      showNotification("✨ 稼働ログの代理確認完了", `【${targetUncheckedWorker.name}】さんの未確認稼働ログ（計${logsToApprove.length}件）をすべて『確認済み』に更新しました。`);
+      setUncheckedModalOpen(false);
+      setTargetUncheckedWorker(null);
+      fetchSummary(); // 画面をリロードして最新状態に更新
+    } catch(e) {
+      console.error(e);
+      showNotification("⚠️ エラー", "稼働ログの更新処理に失敗しました。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // オーナーによる代理確定（月次締め手動承認）の実行関数
   const handleConfirmProxyApprove = async () => {
     if (!targetWorker) return;
     setConfirmModalOpen(false);
@@ -172,7 +200,6 @@ export default function OwnerExportPage() {
       const targetWorkerData = summaryData.find(w => w.workerId === targetWorker.id);
       const totalSec = targetWorkerData ? targetWorkerData.totalSeconds : 0;
 
-      // workerMonthlyStatus に status: "confirmed" を作成・更新
       await setDoc(doc(db, "workerMonthlyStatus", docId), {
         workerId: targetWorker.id,
         yearMonth: currentMonthStr,
@@ -182,7 +209,7 @@ export default function OwnerExportPage() {
         approvedByOwner: true
       }, { merge: true });
 
-      showNotification("✨ 代理確定完了", `【${targetWorker.name}】さんの ${currentMonthStr} 月度稼働実績を『確認済み（確定）』に更新しました。`);
+      showNotification("✨ 月次締めの代理確定完了", `【${targetWorker.name}】さんの ${currentMonthStr} 月度全体の締め提出をオーナー権限で代理完了しました。`);
       fetchSummary();
     } catch (e) {
       console.error("代理確定エラー:", e);
@@ -202,7 +229,8 @@ export default function OwnerExportPage() {
     setExporting(true);
 
     try {
-      const headers = ["ワーカー名", "活動日数", "案件請負数", "案件完了数", "稼働時間(h)", "提出ステータス"];
+      // 💡【追加】CSVの出力項目にも「未確認稼働数」の列を追加
+      const headers = ["ワーカー名", "活動日数", "案件請負数", "案件完了数", "稼働時間(h)", "未確認稼働数", "月次提出ステータス"];
       
       const rows = summaryData.map(data => [
         `"${data.name}"`,
@@ -210,6 +238,7 @@ export default function OwnerExportPage() {
         data.acceptedCount,
         data.completedCount,
         data.duration,
+        data.uncheckedLogs.length,
         data.submissionStatus === "confirmed" ? '"確認済み"' : '"未提出"'
       ].join(","));
 
@@ -236,6 +265,12 @@ export default function OwnerExportPage() {
       showNotification("⚠️ エラー", "CSV生成中にエラーが発生しました。");
       setExporting(false);
     }
+  };
+
+  // 時間を綺麗に表示するフォーマット関数
+  const formatLogTime = (date: Date) => {
+    if (!date || isNaN(date.getTime())) return "--:--";
+    return date.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
   };
 
   const hasData = summaryData.length > 0;
@@ -275,12 +310,12 @@ export default function OwnerExportPage() {
             <span className="text-base select-none">{isAllSubmitted ? "✨" : "⚠️"}</span>
             <div className="text-xs font-black leading-relaxed">
               {isAllSubmitted ? (
-                <p>対象月の稼働スタッフ全員（<span className="text-sm font-mono">{summaryData.length}</span>名）が月次締め（実績提出）を完了しました。今月度の稼働データを安全に出力できます。</p>
+                <p>対象月の稼働スタッフ全員（<span className="text-sm font-mono">{summaryData.length}</span>名）が月全体の締め（実績提出）を完了しました。今月度の稼働データを安全に出力できます。</p>
               ) : (
                 <p>
-                  月次締めが未提出の稼働スタッフが <span className="text-sm font-mono text-rose-600 font-black px-1">{unsubmittedCount}</span> 名います。
+                  月末の月次締めが未提出の稼働スタッフが <span className="text-sm font-mono text-rose-600 font-black px-1">{unsubmittedCount}</span> 名います。
                   <br />
-                  <span className="font-normal text-[11px] text-slate-600">※日々の打刻チェックが完了している場合は、下記テーブルの「代理確定する」ボタンを押すことで、オーナー側で即座に確認済みに変更してデータ出力を解除できます。</span>
+                  <span className="font-normal text-[11px] text-slate-600">※下記テーブルの「月末の提出（月次締め）」列から、オーナー様が代理で締め提出を完了させ、CSV出力ロックを解除できます。</span>
                 </p>
               )}
             </div>
@@ -320,11 +355,16 @@ export default function OwnerExportPage() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-300 text-[11px] text-slate-500 font-black">
                   <th className="p-3 border-r border-slate-200">ワーカー名</th>
-                  <th className="p-3 border-r border-slate-200 text-right w-24">活動日数</th>
-                  <th className="p-3 border-r border-slate-200 text-right w-24">案件請負数</th>
-                  <th className="p-3 border-r border-slate-200 text-right w-24">案件完了数</th>
-                  <th className="p-3 border-r border-slate-200 text-right w-28">総稼働時間</th>
-                  <th className="p-3 text-center w-48">月次提出ステータス</th>
+                  <th className="p-3 border-r border-slate-200 text-right w-20">活動日数</th>
+                  <th className="p-3 border-r border-slate-200 text-right w-20">案件請負数</th>
+                  <th className="p-3 border-r border-slate-200 text-right w-20">案件完了数</th>
+                  <th className="p-3 border-r border-slate-200 text-right w-24">総稼働時間</th>
+                  
+                  {/* 💡【新設】日々の未確認稼働ログを見る列 */}
+                  <th className="p-3 border-r border-slate-200 text-center w-28 bg-rose-50/50">個別の未確認稼働</th>
+                  
+                  {/* 💡【既存の機能】月末の月次締め状態 */}
+                  <th className="p-3 text-center w-40">月末の提出(月次締め)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-800">
@@ -335,15 +375,38 @@ export default function OwnerExportPage() {
                     <td className="p-3 border-r border-slate-200 text-right font-mono text-slate-600">{row.acceptedCount} 件</td>
                     <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-emerald-600">{row.completedCount} 件</td>
                     <td className="p-3 border-r border-slate-200 text-right font-mono font-black text-[#5CA685] bg-slate-50/50">{row.duration} h</td>
+                    
+                    {/* 💡【新設】個別の未確認稼働ログがあるかどうかの表示 */}
+                    <td className="p-3 border-r border-slate-200 text-center">
+                      {row.uncheckedLogs && row.uncheckedLogs.length > 0 ? (
+                        <div className="flex flex-col items-center gap-1.5">
+                          <span className="text-rose-600 font-black text-[10px]">⚠️ {row.uncheckedLogs.length} 件あり</span>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setTargetUncheckedWorker(row);
+                              setUncheckedModalOpen(true);
+                            }}
+                            className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-black px-2 py-1 rounded transition-colors shadow-sm cursor-pointer"
+                          >
+                            詳細を見る
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 text-[10px] font-black">全て確認済</span>
+                      )}
+                    </td>
+
+                    {/* 💡 月末の提出（月次締め）ステータス */}
                     <td className="p-3 text-center">
                       {row.submissionStatus === "confirmed" ? (
                         <span className="bg-emerald-50 text-emerald-700 border border-emerald-300 text-[10px] font-black px-2 py-0.5 rounded shadow-inner">
-                          ✓ 確認済み
+                          ✓ 月締め完了
                         </span>
                       ) : (
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex flex-col items-center gap-1.5">
                           <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black px-2 py-0.5 rounded animate-pulse">
-                            ⏳ 未提出
+                            ⏳ 月締め未提出
                           </span>
                           <button
                             type="button"
@@ -352,10 +415,10 @@ export default function OwnerExportPage() {
                               setConfirmModalOpen(true);
                             }}
                             disabled={submitting}
-                            className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-2.5 py-1 rounded shadow-xs transition-all active:scale-95 cursor-pointer shrink-0"
-                            title="オーナーの権限でこのワーカーの当月稼働を承認（確定）にします"
+                            className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[9px] font-black px-2 py-1 rounded shadow-xs transition-all active:scale-95 cursor-pointer w-full text-center"
+                            title="オーナーの権限でこのワーカーの当月の月締めを代理で完了させます"
                           >
-                            代理確定する
+                            代理で月締め完了
                           </button>
                         </div>
                       )}
@@ -364,7 +427,7 @@ export default function OwnerExportPage() {
                 ))}
                 {!loadingData && summaryData.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-16 text-center text-slate-400 italic text-xs font-medium bg-slate-50">
+                    <td colSpan={7} className="p-16 text-center text-slate-400 italic text-xs font-medium bg-slate-50">
                       選択された月の稼働データはありません
                     </td>
                   </tr>
@@ -376,20 +439,77 @@ export default function OwnerExportPage() {
 
       </div>
 
-      {/* 代理確定モーダル */}
+      {/* 💡【新設】未確認の個別稼働ログ（〇月〇日 ●時〜●時）を一覧で見て承認するモーダル */}
+      {uncheckedModalOpen && targetUncheckedWorker && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
+          <div className="bg-white border border-slate-200 w-full max-w-lg rounded-lg shadow-xl overflow-hidden text-slate-900 flex flex-col max-h-[90vh]">
+            <div className="bg-rose-600 text-white px-4 py-3 font-black text-xs select-none shrink-0 flex justify-between items-center">
+              <span>⚠️ まだ「確認済」になっていない個別の稼働記録</span>
+              <span className="bg-white/20 px-2 py-0.5 rounded-full">{targetUncheckedWorker.uncheckedLogs.length} 件</span>
+            </div>
+            
+            <div className="p-5 bg-white overflow-y-auto space-y-4">
+              <p className="text-[11px] font-bold text-slate-700 leading-relaxed bg-slate-50 p-2.5 rounded border border-slate-200">
+                【{targetUncheckedWorker.name}】さんの稼働データの中に、日々の「本人確認（チェック）」が済んでいないログが残っています。内容を確認し、問題がなければ代理で「一括確認済み」にできます。
+              </p>
+              
+              <div className="space-y-2">
+                {targetUncheckedWorker.uncheckedLogs.map((log: any) => (
+                  <div key={log.id} className="bg-white border-2 border-slate-200 p-2.5 rounded shadow-2xs flex justify-between items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="font-black text-slate-800 text-[11px] mb-1 truncate" title={log.jobTitle}>{log.jobTitle}</div>
+                      <div className="text-slate-600 font-mono text-[11px] flex items-center gap-2">
+                        <span className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                          {log.startTime.toLocaleDateString("ja-JP", { month: "2-digit", day: "2-digit" })} 
+                        </span>
+                        <span className="font-black text-[#5CA685]">
+                          {formatLogTime(log.startTime)} - {formatLogTime(log.endTime)}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded text-[10px] font-black shrink-0">
+                      未確認
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => { setUncheckedModalOpen(false); setTargetUncheckedWorker(null); }}
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors cursor-pointer"
+              >
+                閉じる
+              </button>
+              <button
+                type="button"
+                onClick={handleApproveUncheckedLogs}
+                disabled={submitting}
+                className="px-4 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded shadow-sm transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {submitting ? "更新処理中..." : "すべて代理で『確認済』にする"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 月次締め（月末）の代理確定確認モーダル */}
       {confirmModalOpen && targetWorker && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             <div className="bg-[#5CA685] text-white px-4 py-3 font-black text-xs select-none">
-              <span>⚠️ 月次稼働の代理確定確認</span>
+              <span>⚠️ 月全体の締め（実績提出）代理確認</span>
             </div>
-            <div className="p-6 bg-white space-y-2">
+            <div className="p-6 bg-white space-y-3">
               <p className="text-xs font-bold text-slate-700 leading-relaxed">
-                【{targetWorker.name}】さんの {viewDate.getFullYear()}年{viewDate.getMonth() + 1}月度の月次稼働実績を、オーナー権限で『確認済み（確定）』に変更しますか？
+                【{targetWorker.name}】さんの {viewDate.getFullYear()}年{viewDate.getMonth() + 1}月度全体の締め提出を、オーナー権限で代理完了（確定）しますか？
               </p>
-              <p className="text-[10px] text-slate-400 font-medium">
-                ※確定にするとステータスが『確認済み』に切り替わり、CSV出力のロックが解除されます。
-              </p>
+              <div className="bg-amber-50 border border-amber-200 p-2 rounded text-[10px] font-medium text-amber-800 leading-relaxed">
+                ※この処理を行うと対象ワーカーの月次ステータスが「完了」になり、CSV出力のロックが解除されます。
+              </div>
             </div>
             <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
               <button
@@ -405,14 +525,14 @@ export default function OwnerExportPage() {
                 disabled={submitting}
                 className="px-4 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded shadow-sm transition-colors cursor-pointer disabled:opacity-50"
               >
-                {submitting ? "確定処理中..." : "はい、代理確定する"}
+                {submitting ? "確定処理中..." : "はい、代理で月締め完了にする"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* カスタム通知モーダル */}
+      {/* カスタム通知用モーダル */}
       {infoModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
