@@ -67,19 +67,34 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             };
           }
 
-          // 💡【ズレ解消の超重要ロジック】固定値ではなく、本物の打刻ログ(workLogs)からこの案件の時間を合算する
+          // 💡【原因究明用ログ追加】この案件ID(id)に紐づく打刻ログを取得して詳細を出力
+          console.log("=== 🔍 案件詳細画面の時間集計デバッグ開始 ===");
+          console.log("対象の案件ID:", id);
+
           const logsQuery = query(collection(db, "workLogs"), where("jobId", "==", id));
           const logsSnap = await getDocs(logsQuery);
           const realTimeMap: { [key: string]: number } = {};
           
+          console.log(`取得された該当workLogs件数: ${logsSnap.docs.length} 件`);
+
           logsSnap.forEach(d => {
             const log = d.data();
+            console.log("📄 検出されたログ詳細:", {
+              logId: d.id,
+              workerId: log.workerId,
+              jobTitle: log.jobTitle,
+              seconds: log.seconds,
+              minutes: Math.floor((log.seconds || 0) / 60)
+            });
+
             if (log.workerId && log.seconds) {
               realTimeMap[log.workerId] = (realTimeMap[log.workerId] || 0) + Number(log.seconds);
             }
           });
 
-          // 算出した正確なリアルタイム合計時間を、表示用のデータに上書き反映する
+          console.log("📊 ワーカー別合算秒数結果:", realTimeMap);
+          console.log("=== 🔍 デバッグ終了 ===");
+
           if (processedJob.workers) {
             Object.keys(processedJob.workers).forEach(uid => {
               processedJob.workers[uid].totalAccumulatedSeconds = realTimeMap[uid] || 0;
@@ -124,12 +139,11 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     if (!authLoading) fetchJob();
   }, [id, user, authLoading]);
 
-  // 時間テキスト変換
+  // 時間を「時・分」のフォーマットに変換する関数
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    return `${h}h ${m}m ${sec}s`;
+    return `${h}h ${m}m`;
   };
 
   // クリップボードコピー関数
@@ -624,7 +638,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono font-black text-[#5CA685] bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                            <span className="text-xs font-mono font-black text-[#5CA685] bg-emerald-50 px-2 py-1 rounded border border-emerald-200" title="当案件におけるワーカー個人の合計作業時間">
                               ⏱️ {formatTime(wData.totalAccumulatedSeconds || 0)}
                             </span>
 
@@ -754,7 +768,10 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
               {/* 参加者全員の合計時間を計算して表示 */}
               <div className="p-3.5 bg-emerald-50/40 border border-emerald-200 text-slate-900 rounded font-sans shadow-inner space-y-1">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">TOTAL TIME / 全員の合計稼働実績</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">TOTAL TIME / 当案件の総稼働時間</span>
+                  <span className="text-[9px] text-slate-400 font-bold">※当案件のみ</span>
+                </div>
                 <p className="text-xl font-black text-[#5CA685] tracking-tight font-mono tabular-nums">
                   {formatTime(totalAllWorkersSeconds)}
                 </p>
