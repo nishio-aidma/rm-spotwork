@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import OwnerShell from "@/components/OwnerShell";
@@ -66,6 +66,26 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               }
             };
           }
+
+          // 💡【ズレ解消の超重要ロジック】固定値ではなく、本物の打刻ログ(workLogs)からこの案件の時間を合算する
+          const logsQuery = query(collection(db, "workLogs"), where("jobId", "==", id));
+          const logsSnap = await getDocs(logsQuery);
+          const realTimeMap: { [key: string]: number } = {};
+          
+          logsSnap.forEach(d => {
+            const log = d.data();
+            if (log.workerId && log.seconds) {
+              realTimeMap[log.workerId] = (realTimeMap[log.workerId] || 0) + Number(log.seconds);
+            }
+          });
+
+          // 算出した正確なリアルタイム合計時間を、表示用のデータに上書き反映する
+          if (processedJob.workers) {
+            Object.keys(processedJob.workers).forEach(uid => {
+              processedJob.workers[uid].totalAccumulatedSeconds = realTimeMap[uid] || 0;
+            });
+          }
+
           setJob(processedJob);
 
           // 評価の初期マップを構築
@@ -308,7 +328,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           updatedWorkers[workerUid].status = "completed";
         }
 
-        // 参加している全ワーカーが完了したかチェック
         const allCompleted = Object.values(updatedWorkers).every((w: any) => w.status === "completed");
         const finalJobStatus = allCompleted ? "completed" : job.status;
 
@@ -644,7 +663,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200">
                             <div className="flex items-center justify-between text-xs font-bold bg-white px-3 py-1.5 rounded border border-slate-200 shadow-2xs">
                               <span className="text-slate-500 text-[11px]">📊 ワーカー報告件数:</span>
-                              <span className="font-mono text-sm font-black text-[#0082C8]">{wData.completedCount || 0} 件</span>
+                              <span className="font-mono text-sm font-black text-[#5CA685]">{wData.completedCount || 0} 件</span>
                             </div>
 
                             <div className="flex items-center justify-between bg-white px-2.5 py-1 rounded border border-slate-200 shadow-2xs gap-1">
@@ -653,7 +672,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                                 <select
                                   value={currentRating}
                                   onChange={(e) => setRatingsMap({ ...ratingsMap, [uid]: Number(e.target.value) })}
-                                  className="bg-slate-50 border border-slate-300 rounded px-1.5 py-1 text-xs font-black text-slate-800 outline-none focus:border-[#0082C8]"
+                                  className="bg-slate-50 border border-slate-300 rounded px-1.5 py-1 text-xs font-black text-slate-800 outline-none focus:border-[#5CA685]"
                                 >
                                   <option value={0}>未評価 (-)</option>
                                   <option value={0.5}>★0.5</option>
@@ -671,7 +690,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                                   type="button"
                                   onClick={() => handleSaveWorkerRating(uid)}
                                   disabled={submitting}
-                                  className="bg-[#0082C8] hover:bg-[#0072B5] text-white text-[10px] font-black px-2 py-1 rounded transition-colors shadow-2xs cursor-pointer shrink-0"
+                                  className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-2 py-1 rounded transition-colors shadow-2xs cursor-pointer shrink-0"
                                   title="このワーカーの★評価を更新保存"
                                 >
                                   保存
@@ -764,7 +783,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </button>
                 )}
 
-                {/* 💡【修正箇所】一括操作ボタンの表示条件に `job.status !== "completed"` を追加 */}
                 {currentWorkerCount > 0 && job.status !== "draft" && job.status !== "completed" && (
                   <div className="space-y-2 bg-slate-50 p-2.5 border border-slate-300 rounded">
                     <span className="text-[10px] font-black text-slate-400 block mb-1">全メンバー一括操作</span>
@@ -788,7 +806,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                   </div>
                 )}
 
-                {/* 💡【追加】完了済み（completed）の時の分かりやすい案内メッセージ */}
                 {job.status === "completed" && (
                   <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-center rounded text-xs font-black select-none">
                     ✨ この案件は検収完了（完了済み）です
@@ -895,7 +912,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       {infoModalMessage && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
-            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs select-none">
+            <div className="bg-[#5CA685] text-white px-4 py-3 font-black text-xs select-none">
               <span>{infoModalTitle}</span>
             </div>
             <div className="p-6 bg-white">
