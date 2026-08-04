@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, use } from "react";
 import { useRouter } from "next/navigation";
-import { doc, getDoc, updateDoc, serverTimestamp, setDoc, deleteDoc, collection, addDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, setDoc, deleteDoc, collection, addDoc, query, where, getDocs } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import WorkerShell from "@/components/WorkerShell";
@@ -62,6 +62,25 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                   submittedAt: data.submittedAt || null
                 }
               };
+            }
+
+            // 💡【ズレ解消の超重要ロジック】固定値ではなく、本物の打刻ログ(workLogs)からこの案件の時間を合算する
+            const logsQuery = query(collection(db, "workLogs"), where("jobId", "==", id));
+            const logsSnap = await getDocs(logsQuery);
+            const realTimeMap: { [key: string]: number } = {};
+            
+            logsSnap.forEach(d => {
+              const log = d.data();
+              if (log.workerId && log.seconds) {
+                realTimeMap[log.workerId] = (realTimeMap[log.workerId] || 0) + Number(log.seconds);
+              }
+            });
+
+            // 算出した正確なリアルタイム合計時間を、表示用のデータに上書き反映する
+            if (processedJob.workers) {
+              Object.keys(processedJob.workers).forEach(uid => {
+                processedJob.workers[uid].totalAccumulatedSeconds = realTimeMap[uid] || 0;
+              });
             }
             
             setJob(processedJob);
@@ -287,7 +306,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
         await updateDoc(jobRef, {
           [`workers.${currentUser.uid}.status`]: "paused",
           [`workers.${currentUser.uid}.totalAccumulatedSeconds`]: finalSeconds,
-          [`workers.${currentUser.uid}.completedCount`]: countVal, // 💡 入力された件数を保存
+          [`workers.${currentUser.uid}.completedCount`]: countVal,
           [`workers.${currentUser.uid}.workerComment`]: workerComment,
           status: finalOverallStatus, 
           updatedAt: serverTimestamp()
@@ -344,7 +363,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
           [`workers.${currentUser.uid}.status`]: "review",
           [`workers.${currentUser.uid}.totalAccumulatedSeconds`]: finalSeconds,
           [`workers.${currentUser.uid}.workerComment`]: workerComment, 
-          [`workers.${currentUser.uid}.completedCount`]: countVal, // 💡 確定件数を保存
+          [`workers.${currentUser.uid}.completedCount`]: countVal,
           [`workers.${currentUser.uid}.submittedAt`]: serverTimestamp(),
           status: finalJobStatus, 
           updatedAt: serverTimestamp()
@@ -773,7 +792,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
 
       </div>
 
-      {/* 💡【改良】件数入力枠を備えたカスタムモーダル */}
+      {/* 件数入力枠を備えたカスタムモーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
@@ -787,7 +806,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
                 {modalMessage}
               </p>
 
-              {/* 💡 一時停止(pause)または完了報告(complete)の際に、モーダル内で直感的に件数を入力させるフォーム */}
               {(modalActionType === "pause" || modalActionType === "complete") && (
                 <div className="bg-slate-50 p-3 rounded border-2 border-emerald-300 space-y-2">
                   <div className="text-[11px] font-black text-slate-700 flex justify-between items-center">
