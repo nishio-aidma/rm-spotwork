@@ -67,33 +67,29 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             };
           }
 
-          // 💡【原因究明用ログ追加】この案件ID(id)に紐づく打刻ログを取得して詳細を出力
-          console.log("=== 🔍 案件詳細画面の時間集計デバッグ開始 ===");
-          console.log("対象の案件ID:", id);
-
+          // 💡【解析用】日付も一緒にコンソールに出力する処理
+          console.log("=== 🔍 打刻ログの日付解析開始 ===");
           const logsQuery = query(collection(db, "workLogs"), where("jobId", "==", id));
           const logsSnap = await getDocs(logsQuery);
           const realTimeMap: { [key: string]: number } = {};
-          
-          console.log(`取得された該当workLogs件数: ${logsSnap.docs.length} 件`);
 
           logsSnap.forEach(d => {
             const log = d.data();
-            console.log("📄 検出されたログ詳細:", {
-              logId: d.id,
-              workerId: log.workerId,
-              jobTitle: log.jobTitle,
-              seconds: log.seconds,
-              minutes: Math.floor((log.seconds || 0) / 60)
-            });
+            
+            // 日付の変換処理
+            let logDateStr = "日付不明";
+            if (log.timestamp) {
+              const t = log.timestamp.toDate ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000);
+              logDateStr = t.toLocaleDateString("ja-JP");
+            }
+
+            console.log(`📅 [日付: ${logDateStr}] ワーカーID: ${log.workerId} | 時間: ${Math.floor((log.seconds || 0) / 60)}分 (${log.seconds}秒)`);
 
             if (log.workerId && log.seconds) {
               realTimeMap[log.workerId] = (realTimeMap[log.workerId] || 0) + Number(log.seconds);
             }
           });
-
-          console.log("📊 ワーカー別合算秒数結果:", realTimeMap);
-          console.log("=== 🔍 デバッグ終了 ===");
+          console.log("=== 🔍 解析終了 ===");
 
           if (processedJob.workers) {
             Object.keys(processedJob.workers).forEach(uid => {
