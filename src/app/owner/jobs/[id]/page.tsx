@@ -91,6 +91,20 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
           });
           console.log("=== 🔍 解析終了 ===");
 
+          // 💡【原因追究用】廻立さんの特定案件のログをすべて洗い出し、jobIdがどうなっているかを確認します
+          const allLogsSnap = await getDocs(collection(db, "workLogs"));
+          console.log("=== 🔍 53分の差異 追跡調査 ===");
+          allLogsSnap.docs.forEach(docD => {
+            const l = docD.data();
+            // 廻立様（KHZZ054dPShnT8VV62jVwzHA6IV2）で、案件名がリスト精査業務のもの
+            if (l.workerId === "KHZZ054dPShnT8VV62jVwzHA6IV2" && l.jobTitle && l.jobTitle.includes("リスト精査業務_有限会社フロンティア商事_ノベルティ制作")) {
+              const dateObj = l.timestamp?.toDate ? l.timestamp.toDate() : new Date(l.timestamp?.seconds * 1000 || 0);
+              const dateStr = dateObj.toLocaleDateString("ja-JP");
+              console.log(`日付: ${dateStr} | 時間: ${Math.floor((l.seconds || 0)/60)}分 | 保存されているjobId: "${l.jobId}"`);
+            }
+          });
+          console.log("=== 🔍 追跡終了 ===");
+
           if (processedJob.workers) {
             Object.keys(processedJob.workers).forEach(uid => {
               processedJob.workers[uid].totalAccumulatedSeconds = realTimeMap[uid] || 0;
@@ -766,7 +780,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               <div className="p-3.5 bg-emerald-50/40 border border-emerald-200 text-slate-900 rounded font-sans shadow-inner space-y-1">
                 <div className="flex justify-between items-center">
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">TOTAL TIME / 当案件の総稼働時間</span>
-                  <span className="text-[9px] text-slate-400 font-bold">※当案件のみ</span>
+                  <span className="text-[9px] text-slate-400 font-bold">※全期間累計</span>
                 </div>
                 <p className="text-xl font-black text-[#5CA685] tracking-tight font-mono tabular-nums">
                   {formatTime(totalAllWorkersSeconds)}
@@ -923,7 +937,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
 
       {/* カスタム通知モーダル */}
       {infoModalMessage && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
             <div className="bg-[#5CA685] text-white px-4 py-3 font-black text-xs select-none">
               <span>{infoModalTitle}</span>
