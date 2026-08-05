@@ -12,6 +12,7 @@ export default function OwnerWorkManagementPage() {
   // データ保管用ステート
   const [logs, setLogs] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
+  const [jobsList, setJobsList] = useState<any[]>([]); // 登録案件一覧を保持
   const [loading, setLoading] = useState(true);
   
   // フィルター用ステート
@@ -25,21 +26,41 @@ export default function OwnerWorkManagementPage() {
 
   // フォーム入力用ステート
   const [formWorkerId, setFormWorkerId] = useState("");
-  const [formJobTitle, setFormJobTitle] = useState("");
+  const [formJobId, setFormJobId] = useState(""); // 選択された案件ID
+  const [formJobTitle, setFormJobTitle] = useState(""); // 選択された案件タイトル
   const [formDate, setFormDate] = useState("");
   const [formStartTime, setFormStartTime] = useState("09:00");
   const [formEndTime, setFormEndTime] = useState("18:00");
   const [formChecked, setFormChecked] = useState(false);
 
+  // カスタム通知・確認モーダル用ステート（Windows標準alert/confirm非使用）
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [infoModalTitle, setInfoModalTitle] = useState("");
+  const [infoModalMessage, setInfoModalMessage] = useState("");
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
+
+  const showNotification = (title: string, msg: string) => {
+    setInfoModalTitle(title);
+    setInfoModalMessage(msg);
+    setInfoModalOpen(true);
+  };
+
   const currentMonthStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
 
-  // 1. ワーカー一覧と、当月の全稼働ログを一括照合
+  // 1. ワーカー一覧・案件一覧・当月の全稼働ログを一括取得
   const fetchData = async () => {
     if (!owner) return;
     setLoading(true);
     try {
-      // ワーカー名簿の取得
-      const userSnap = await getDocs(query(collection(db, "users"), where("role", "==", "worker")));
+      // ワーカー名簿、登録案件一覧、稼働ログの並行取得
+      const [userSnap, jobSnap, logSnap] = await Promise.all([
+        getDocs(query(collection(db, "users"), where("role", "==", "worker"))),
+        getDocs(collection(db, "jobs")),
+        getDocs(collection(db, "workLogs"))
+      ]);
+
       const workerList = userSnap.docs.map(d => ({
         id: d.id,
         name: `${d.data().lastName || ""} ${d.data().firstName || ""}`.trim() || d.data().name || "不明のスタッフ",
@@ -49,16 +70,19 @@ export default function OwnerWorkManagementPage() {
 
       const workerMap = Object.fromEntries(workerList.map(w => [w.id, w.name]));
 
-      // 稼働ログ（workLogs）の全取得
-      const logSnap = await getDocs(collection(db, "workLogs"));
-      
+      // 登録済み案件一覧を保持（手動追加時のプルダウン用）
+      const fetchedJobs = jobSnap.docs.map(d => ({
+        id: d.id,
+        title: d.data().title || "名称未指定案件"
+      }));
+      setJobsList(fetchedJobs);
+
       const targetYear = viewDate.getFullYear();
       const targetMonth = viewDate.getMonth();
 
       const logList = logSnap.docs.map(d => {
         const data = d.data() as any;
         
-        // 【安全装置】timestampフィールドの型が何であっても確実にDateオブジェクトに変換する
         let endTime = new Date();
         if (data.timestamp) {
           if (typeof data.timestamp.toDate === 'function') {
@@ -89,11 +113,10 @@ export default function OwnerWorkManagementPage() {
           checked: data.checked || false,
         };
       }).filter(log => {
-        // デフォルト当月でフィルター
         return log.startTime && log.startTime.getFullYear() === targetYear && log.startTime.getMonth() === targetMonth;
       });
 
-      // 日付の昇順（1日〜末日）できれいに整列
+      // 日付の昇順（1日〜末日）で整列
       logList.sort((a, b) => {
         const timeA = a.startTime ? a.startTime.getTime() : 0;
         const timeB = b.startTime ? b.startTime.getTime() : 0;
@@ -117,6 +140,7 @@ export default function OwnerWorkManagementPage() {
     if (log) {
       setEditingLog(log);
       setFormWorkerId(log.workerId);
+      setFormJobId(log.jobId || (jobsList[0]?.id || ""));
       setFormJobTitle(log.jobTitle);
       
       const yyyy = log.startTime.getFullYear();
@@ -130,7 +154,10 @@ export default function OwnerWorkManagementPage() {
     } else {
       setEditingLog(null);
       setFormWorkerId(workers[0]?.id || "");
-      setFormJobTitle("");
+      
+      const defaultJob = jobsList[0];
+      setFormJobId(defaultJob?.id || "");
+      setFormJobTitle(defaultJob?.title || "");
       
       const today = new Date();
       const yyyy = today.getFullYear();
@@ -145,11 +172,20 @@ export default function OwnerWorkManagementPage() {
     setModalOpen(true);
   };
 
+  // プルダウン変更時に案件IDと案件名を同時に同期
+  const handleJobSelectChange = (selectedJobId: string) => {
+    setFormJobId(selectedJobId);
+    const selectedJob = jobsList.find(j => j.id === selectedJobId);
+    if (selectedJob) {
+      setFormJobTitle(selectedJob.title);
+    }
+  };
+
   // フォームの保存（追加・編集のコミット）
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formWorkerId || !formJobTitle || !formDate || !formStartTime || !formEndTime) {
-      alert("すべての項目を正しく入力してください。");
+    if (!formWorkerId || !formJobId || !formDate || !formStartTime || !formEndTime) {
+      showNotification("⚠️ 入力不備", "すべての項目を正しく選択・入力してください。");
       return;
     }
 
@@ -159,7 +195,7 @@ export default function OwnerWorkManagementPage() {
       const endDateTime = new Date(`${formDate}T${formEndTime}:00`);
       
       if (endDateTime.getTime() <= startDateTime.getTime()) {
-        alert("終了時刻は開始時刻よりも後の時間を指定してください。");
+        showNotification("⚠️ 時間設定エラー", "終了時刻は開始時刻よりも後の時間を指定してください。");
         setSubmitting(false);
         return;
       }
@@ -168,7 +204,8 @@ export default function OwnerWorkManagementPage() {
 
       const logPayload = {
         workerId: formWorkerId,
-        jobTitle: formJobTitle,
+        jobId: formJobId, // 選択された正しい案件IDを保存
+        jobTitle: formJobTitle, // 案件名を保存
         seconds: calculatedSeconds,
         timestamp: endDateTime,
         checked: formChecked,
@@ -177,34 +214,43 @@ export default function OwnerWorkManagementPage() {
 
       if (editingLog) {
         await updateDoc(doc(db, "workLogs", editingLog.id), logPayload);
-        alert("稼働記録を修正・更新しました。");
+        showNotification("✨ 更新完了", "稼働記録を修正・更新しました。");
       } else {
         await addDoc(collection(db, "workLogs"), {
           ...logPayload,
-          jobId: "manual_entry",
           createdAt: serverTimestamp()
         });
-        alert("稼働記録を手動で新規登録しました。");
+        showNotification("✨ 登録完了", "案件IDを紐付けて稼働記録を新規登録しました。");
       }
 
       setModalOpen(false);
       fetchData();
     } catch (err) {
       console.error(err);
-      alert("保存処理に失敗しました。");
+      showNotification("⚠️ エラー", "保存処理に失敗しました。");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // 稼働ログの削除
-  const handleDeleteLog = async (logId: string) => {
-    if (!confirm("【警告】この稼働明細ログを完全に削除しますか？\n※この操作は取り消せません。")) return;
+  // 稼働ログ削除モーダルの起動
+  const triggerDeleteLog = (logId: string) => {
+    setDeletingLogId(logId);
+    setDeleteModalOpen(true);
+  };
+
+  // 稼働ログの実際の削除処理
+  const confirmDeleteLog = async () => {
+    if (!deletingLogId) return;
     try {
-      await deleteDoc(doc(db, "workLogs", logId));
+      await deleteDoc(doc(db, "workLogs", deletingLogId));
+      showNotification("✨ 削除完了", "稼働明細ログを削除しました。");
       fetchData();
     } catch (e) {
-      alert("削除に失敗しました。");
+      showNotification("⚠️ エラー", "削除処理に失敗しました。");
+    } finally {
+      setDeleteModalOpen(false);
+      setDeletingLogId(null);
     }
   };
 
@@ -215,15 +261,12 @@ export default function OwnerWorkManagementPage() {
     return `${h}h ${m}m`;
   };
   
-  // 【安全装置】渡されたデータが正常なDateオブジェクトでない場合は空文字を返すガードを追加
   const formatHM = (d: any) => {
     if (!d || !(d instanceof Date) || isNaN(d.getTime())) return "--:--";
     return d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
   };
 
   const filteredLogs = logs.filter(log => workerFilter === "all" || log.workerId === workerFilter);
-
-  // 【追加機能】現在画面に表示されているログ（手動・自動すべて）の合計秒数を計算
   const totalSeconds = filteredLogs.reduce((sum, log) => sum + (Number(log.seconds) || 0), 0);
 
   if (authLoading || loading) return <OwnerShell title="稼働管理"><div className="p-10 text-center text-slate-400 text-xs font-bold">稼働データを解析中...</div></OwnerShell>;
@@ -263,13 +306,13 @@ export default function OwnerWorkManagementPage() {
           <button
             type="button"
             onClick={() => openModal()}
-            className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white border border-black/10 px-5 py-2 rounded text-xs font-black transition-colors shadow-sm flex items-center justify-center gap-1.5 self-end md:self-auto"
+            className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white border border-black/10 px-5 py-2 rounded text-xs font-black transition-colors shadow-sm flex items-center justify-center gap-1.5 self-end md:self-auto cursor-pointer"
           >
             ➕ 稼働記録を手動追加する
           </button>
         </div>
 
-        {/* 【新規追加】総稼働時間の集計表示セクション（手動追加分もここに100%反映されます） */}
+        {/* 総稼働時間の集計表示セクション */}
         <div className="bg-slate-50 p-4 rounded border-2 border-dashed border-slate-300 flex items-center justify-between select-none">
           <div className="space-y-0.5">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
@@ -280,7 +323,7 @@ export default function OwnerWorkManagementPage() {
             </div>
           </div>
           <div className="text-right">
-            <span className="text-[10px] font-black text-slate-400 block uppercase tracking-wider当年分">期間内 総稼働時間</span>
+            <span className="text-[10px] font-black text-slate-400 block uppercase tracking-wider">期間内 総稼働時間</span>
             <span className="font-mono text-xl font-black text-[#0082C8]">
               {formatTextTime(totalSeconds)}
             </span>
@@ -337,14 +380,14 @@ export default function OwnerWorkManagementPage() {
                       <button 
                         type="button" 
                         onClick={() => openModal(log)} 
-                        className="text-[#0082C8] hover:underline font-black text-[11px]"
+                        className="text-[#0082C8] hover:underline font-black text-[11px] cursor-pointer"
                       >
                         編集
                       </button>
                       <button 
                         type="button" 
-                        onClick={() => handleDeleteLog(log.id)} 
-                        className="text-slate-300 hover:text-rose-600 transition-colors p-1 text-[13px]"
+                        onClick={() => triggerDeleteLog(log.id)} 
+                        className="text-slate-300 hover:text-rose-600 transition-colors p-1 text-[13px] cursor-pointer"
                         title="削除"
                       >
                         🗑️
@@ -382,7 +425,7 @@ export default function OwnerWorkManagementPage() {
                   disabled={!!editingLog}
                   value={formWorkerId}
                   onChange={(e) => setFormWorkerId(e.target.value)}
-                  className="w-full border-2 border-slate-300 rounded p-2 outline-none focus:border-[#0082C8] disabled:bg-slate-100 disabled:text-slate-500 font-black"
+                  className="w-full border-2 border-slate-300 rounded p-2 outline-none focus:border-[#0082C8] disabled:bg-slate-100 disabled:text-slate-500 font-black cursor-pointer"
                 >
                   {workers.map(w => (
                     <option key={w.id} value={w.id}>{w.name} ({w.email})</option>
@@ -390,15 +433,22 @@ export default function OwnerWorkManagementPage() {
                 </select>
               </div>
 
+              {/* 自由記述から、既存案件のプルダウン選択へ改修 */}
               <div className="space-y-1">
-                <label className="text-slate-400 block uppercase tracking-wider text-[10px]">従事した案件・タスク名称</label>
-                <input
-                  type="text"
-                  placeholder="例: 【フォーム投稿】全国の学習塾リスト 100件"
-                  value={formJobTitle}
-                  onChange={(e) => setFormJobTitle(e.target.value)}
-                  className="w-full border-2 border-slate-300 rounded p-2 outline-none focus:border-[#0082C8] font-black placeholder:font-normal"
-                />
+                <label className="text-slate-400 block uppercase tracking-wider text-[10px]">従事した案件（登録済み案件から選択）</label>
+                <select
+                  value={formJobId}
+                  onChange={(e) => handleJobSelectChange(e.target.value)}
+                  className="w-full border-2 border-slate-300 rounded p-2 outline-none focus:border-[#0082C8] font-black cursor-pointer"
+                >
+                  {jobsList.length === 0 ? (
+                    <option value="">登録されている案件がありません</option>
+                  ) : (
+                    jobsList.map(j => (
+                      <option key={j.id} value={j.id}>📋 {j.title}</option>
+                    ))
+                  )}
+                </select>
               </div>
 
               <div className="space-y-1">
@@ -447,14 +497,14 @@ export default function OwnerWorkManagementPage() {
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide cursor-pointer"
               >
                 キャンセル
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-5 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm disabled:opacity-50"
+                className="px-5 py-2 bg-[#0082C8] hover:bg-[#0072B5] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm disabled:opacity-50 cursor-pointer"
               >
                 {submitting ? "保存中..." : "この内容で確定・保存"}
               </button>
@@ -462,6 +512,67 @@ export default function OwnerWorkManagementPage() {
           </form>
         </div>
       )}
+
+      {/* カスタム通知モーダル */}
+      {infoModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            <div className="bg-[#0082C8] text-white px-4 py-3 font-black text-xs select-none">
+              <span>{infoModalTitle}</span>
+            </div>
+            <div className="p-6 bg-white">
+              <p className="text-xs font-bold text-slate-700 leading-relaxed whitespace-pre-wrap">
+                {infoModalMessage}
+              </p>
+            </div>
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setInfoModalOpen(false)}
+                className="px-5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-black text-xs rounded shadow-sm cursor-pointer"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* カスタム削除確認モーダル */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            <div className="bg-rose-600 text-white px-4 py-3 font-black text-xs select-none">
+              <span>⚠️ 稼働ログ削除の確認</span>
+            </div>
+            <div className="p-6 bg-white space-y-2">
+              <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                この稼働明細ログを完全に削除しますか？
+              </p>
+              <p className="text-[10px] text-slate-400 font-medium">
+                ※この操作は取り消せません。削除された分の時間は月次集計からも引かれます。
+              </p>
+            </div>
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setDeleteModalOpen(false); setDeletingLogId(null); }}
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteLog}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded shadow-sm transition-colors cursor-pointer"
+              >
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </OwnerShell>
   );
 }
