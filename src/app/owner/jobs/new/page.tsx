@@ -37,10 +37,10 @@ function JobForm() {
     targetItems: "", // リスト作成 > 「入力項目」URL用
     formContent: "", // フォーム投稿 > 「送信文面内容」URL用
     inputInfo: "",   // フォーム投稿 > 「入力情報」URL用
-    additionalLinkTitle: "", // 💡【新設】追加リンク用の任意タイトル
-    additionalLinkUrl: "",   // 💡【新設】追加リンク用のURL
+    additionalLinkTitle: "", // 追加リンク用の任意タイトル
+    additionalLinkUrl: "",   // 追加リンク用のURL
     scClient: "",    // SCクライアント
-    procedures: ["", "", ""],
+    procedures: ["", "", ""], // 初期値は3つ
     memo: ""         // メモ欄
   });
 
@@ -78,9 +78,11 @@ function JobForm() {
           targetItems: baseData.targetItems || "",
           formContent: baseData.formContent || "",
           inputInfo: baseData.inputInfo || "",
-          additionalLinkTitle: baseData.additionalLinkTitle || "", // 💡 コピー・編集時の復元項目を追加
-          additionalLinkUrl: baseData.additionalLinkUrl || "",   // 💡 コピー・編集時の復元項目を追加
-          procedures: Array.isArray(baseData.procedures) ? baseData.procedures : ["", "", ""],
+          additionalLinkTitle: baseData.additionalLinkTitle || "",
+          additionalLinkUrl: baseData.additionalLinkUrl || "",
+          procedures: Array.isArray(baseData.procedures) && baseData.procedures.length > 0 
+                      ? baseData.procedures 
+                      : ["", "", ""],
           memo: baseData.memo || ""
         }));
 
@@ -216,9 +218,22 @@ ${noticeMessage || "（特になし）"}
     }
   };
 
+  // 💡【変更箇所】手順入力の変更ハンドラー
   const handleProcedureChange = (index: number, value: string) => {
     const newProcedures = [...formData.procedures];
     newProcedures[index] = value;
+    setFormData({ ...formData, procedures: newProcedures });
+  };
+
+  // 💡【追加機能】新しい手順ステップを増やすハンドラー
+  const handleAddProcedure = () => {
+    setFormData({ ...formData, procedures: [...formData.procedures, ""] });
+  };
+
+  // 💡【追加機能】特定の手順ステップを削除するハンドラー
+  const handleRemoveProcedure = (index: number) => {
+    if (formData.procedures.length <= 1) return; // 最後の1つは消せないようにガード
+    const newProcedures = formData.procedures.filter((_, i) => i !== index);
     setFormData({ ...formData, procedures: newProcedures });
   };
 
@@ -286,7 +301,6 @@ ${noticeMessage || "（特になし）"}
 
         {/* 1. 基本設定セクション */}
         <section className="space-y-2">
-          {/* 💡 テーマカラーをセージグリーン（border-[#5CA685]）へ調整 */}
           <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">基本設定</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
             <div className="grid grid-cols-2 gap-2">
@@ -366,7 +380,6 @@ ${noticeMessage || "（特になし）"}
               />
             </div>
 
-            {/* 💡【UIアップデート】3つの入力枠を1つの共通コンテナで綺麗にパッケージ化 */}
             {jobType === 'form_posting' ? (
               <div className="space-y-4 pt-1">
                 <div className="space-y-1">
@@ -405,7 +418,6 @@ ${noticeMessage || "（特になし）"}
                   </div>
                 </div>
 
-                {/* 💡【新設】タイトル任意設定 ＋ URLリンク の3つ目の追加入力枠 */}
                 <div className="space-y-1.5 pt-3 border-t border-dashed border-slate-200">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">その他追加リンク（任意設定）</label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -475,23 +487,50 @@ ${noticeMessage || "（特になし）"}
           </div>
         </section>
 
-        {/* 3. 作業手順セクション */}
+        {/* 3. 作業手順セクション（💡動的追加・削除対応） */}
         <section className="space-y-2">
-          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-emerald-600 pl-2">具体的な手順 (3ステップ)</h2>
-          <div className="divide-y-2 divide-slate-200 border-2 border-slate-200 rounded overflow-hidden bg-slate-50 shadow-sm">
-            {formData.procedures.map((p, i) => (
-              <div key={i} className="flex gap-3 items-center p-2.5 bg-white text-xs">
-                <span className="text-[11px] bg-slate-100 border border-slate-300 text-slate-500 px-1.5 py-0.5 font-mono font-bold rounded">
-                  {String(i + 1).padStart(2, '0')}
-                </span>
-                <input 
-                  className="flex-1 p-1.5 bg-white border border-slate-300 rounded text-xs font-medium outline-none focus:border-slate-500" 
-                  placeholder={`手順 ${i + 1} を入力`}
-                  value={p}
-                  onChange={e => handleProcedureChange(i, e.target.value)}
-                />
-              </div>
-            ))}
+          <div className="flex justify-between items-end border-l-2 border-emerald-600 pl-2">
+            <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
+              具体的な手順 ({formData.procedures.length}ステップ)
+            </h2>
+          </div>
+          
+          <div className="bg-slate-50 border-2 border-slate-200 rounded p-2 shadow-sm space-y-2">
+            <div className="divide-y-2 divide-slate-200 border-2 border-slate-200 rounded overflow-hidden bg-white">
+              {formData.procedures.map((p, i) => (
+                <div key={i} className="flex gap-2 items-center p-2.5 hover:bg-slate-50 transition-colors">
+                  <span className="text-[11px] bg-slate-100 border border-slate-300 text-slate-500 px-1.5 py-0.5 font-mono font-bold rounded shrink-0">
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <input 
+                    className="flex-1 p-1.5 bg-white border border-slate-300 rounded text-xs font-medium outline-none focus:border-[#5CA685]" 
+                    placeholder={`手順 ${i + 1} の内容を入力`}
+                    value={p}
+                    onChange={e => handleProcedureChange(i, e.target.value)}
+                  />
+                  
+                  {/* 要素が2個以上の時だけ削除ボタンを表示 */}
+                  {formData.procedures.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveProcedure(i)}
+                      className="text-slate-400 hover:text-rose-600 transition-colors px-2 shrink-0 cursor-pointer"
+                      title={`手順 ${i + 1} を削除`}
+                    >
+                      🗑️
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAddProcedure}
+              className="w-full py-2 bg-white border-2 border-dashed border-emerald-300 text-emerald-700 hover:bg-emerald-50 rounded text-xs font-black transition-colors cursor-pointer"
+            >
+              ➕ 手順ステップを追加する
+            </button>
           </div>
         </section>
 
@@ -514,7 +553,7 @@ ${noticeMessage || "（特になし）"}
           <button 
             type="button" 
             onClick={() => router.back()} 
-            className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 rounded text-xs font-black transition-colors"
+            className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 rounded text-xs font-black transition-colors cursor-pointer"
           >
             キャンセル
           </button>
@@ -524,7 +563,7 @@ ${noticeMessage || "（特になし）"}
               type="button"
               onClick={() => triggerSubmitModal('draft')}
               disabled={submitting}
-              className="px-4 py-2 bg-white border-2 border-slate-300 text-slate-800 rounded text-xs font-black hover:bg-slate-50 hover:border-slate-400 transition-colors"
+              className="px-4 py-2 bg-white border-2 border-slate-300 text-slate-800 rounded text-xs font-black hover:bg-slate-50 hover:border-slate-400 transition-colors cursor-pointer"
             >
               {existingJobId ? "下書きとして上書き保存" : "下書きとして保存"}
             </button>
@@ -532,7 +571,7 @@ ${noticeMessage || "（特になし）"}
               type="button"
               onClick={() => triggerSubmitModal('open')}
               disabled={submitting}
-              className="px-5 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white border border-black/10 rounded text-xs font-bold disabled:opacity-50 transition-colors shadow-sm"
+              className="px-5 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white border border-black/10 rounded text-xs font-bold disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
             >
               {submitting ? "処理中..." : existingJobId ? "公開状態で上書き保存" : "案件を公開する"}
             </button>
@@ -590,14 +629,14 @@ ${noticeMessage || "（特になし）"}
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide"
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide cursor-pointer"
               >
                 キャンセル
               </button>
               <button
                 type="button"
                 onClick={handleModalConfirm}
-                className="px-4 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm"
+                className="px-4 py-2 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors outline-none tracking-wide shadow-sm cursor-pointer"
               >
                 {modalTargetStatus === 'open' 
                   ? (shouldNotify ? "はい、通知して公開する" : "はい、通知なしで公開する")
