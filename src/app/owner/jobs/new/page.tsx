@@ -2,7 +2,8 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
-import { collection, addDoc, doc, updateDoc, getDoc, serverTimestamp } from "firebase/firestore";
+// 💡【追加】getDocs と deleteDoc をインポートに追加
+import { collection, addDoc, doc, updateDoc, getDoc, getDocs, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import OwnerShell from "@/components/OwnerShell";
 import { sendMembersNotification } from "@/lib/members";
@@ -15,19 +16,29 @@ const isValidUrl = (url: string) => {
   }
 };
 
-// 💡【新設】作業詳細の自由追加項目用のデータ型定義
+// 作業詳細の追加項目インターフェース
 interface DetailItem {
   title: string;
   type: 'link' | 'text';
   value: string;
 }
 
+export default function NewJobPage() {
+  return (
+    <OwnerShell title="新規案件の作成" subTitle="案件の掲載設定">
+      <Suspense fallback={<div className="p-10 text-center text-slate-400 text-xs font-bold">フォームを表示中...</div>}>
+        <JobForm />
+      </Suspense>
+    </OwnerShell>
+  );
+}
+
 function JobForm() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   
-  // ※お仕事の種類は次回マスター化して自由に追加できるように改修します（今回は一旦そのまま保持）
-  const [jobType, setJobType] = useState<'form_posting' | 'list_creation'>('form_posting');
+  // 💡【変更】型を固定文字列から string へ変更（自由に拡張できるように）
+  const [jobType, setJobType] = useState<string>('form_posting');
   
   const [existingJobId, setExistingJobId] = useState<string | null>(null);
 
@@ -39,12 +50,11 @@ function JobForm() {
     deadline: "",
     urgency: "1",
     scClient: "",
-    // 💡【一律化】古い固定リンク枠を廃止し、自由に追加できる配列枠に変更
     detailItems: [
       { title: "指示書・マニュアル", type: "link", value: "" },
       { title: "作業用リスト", type: "link", value: "" }
     ] as DetailItem[],
-    procedures: ["", "", ""], // 手順の初期値
+    procedures: ["", "", ""],
     memo: ""
   });
 
@@ -56,7 +66,27 @@ function JobForm() {
   const [noticeMessage, setNoticeMessage] = useState("");
   const [shouldNotify, setShouldNotify] = useState(true);
 
-  // コピーボタン・編集ボタンからパスされた記憶データをキャッチして復元
+  // 💡【追加】カスタムお仕事種類管理用のステート群
+  const [customJobTypes, setCustomJobTypes] = useState<{id: string, name: string}[]>([]);
+  const [jobTypeSettingsOpen, setJobTypeSettingsOpen] = useState(false);
+  const [newJobTypeName, setNewJobTypeName] = useState("");
+  const [isUpdatingJobType, setIsUpdatingJobType] = useState(false);
+
+  // 💡【追加】Firestoreからカスタムのお仕事種類を取得する処理
+  useEffect(() => {
+    const fetchCustomJobTypes = async () => {
+      try {
+        const snap = await getDocs(collection(db, "customJobTypes"));
+        const types = snap.docs.map(d => ({ id: d.id, name: d.data().name }));
+        setCustomJobTypes(types);
+      } catch (e) {
+        console.error("カスタムお仕事種類の取得に失敗しました:", e);
+      }
+    };
+    fetchCustomJobTypes();
+  }, []);
+
+  // コピーボタン・編集ボタンからのデータ復元
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem("duplicate_job_base");
@@ -65,11 +95,11 @@ function JobForm() {
         
         if (baseData.jobType) setJobType(baseData.jobType);
 
-        // 💡【安全装置】旧バージョンの固定リンクデータが残っていた場合、新しい自由追加形式に自動変換して復元する
         let restoredDetailItems: DetailItem[] = [];
         if (Array.isArray(baseData.detailItems) && baseData.detailItems.length > 0) {
           restoredDetailItems = baseData.detailItems;
         } else {
+          // 旧データ構造からの自動変換引き継ぎ
           if (baseData.formContent) restoredDetailItems.push({ title: "送信文面内容", type: "link", value: baseData.formContent });
           if (baseData.inputInfo) restoredDetailItems.push({ title: "入力情報リスト", type: "link", value: baseData.inputInfo });
           if (baseData.siteUrl) restoredDetailItems.push({ title: "抽出サイトURL", type: "link", value: baseData.siteUrl });
@@ -111,7 +141,44 @@ function JobForm() {
     }
   }, []);
 
-  // 💡【追加】作業詳細の自由入力枠を操作するハンドラー群
+  // 💡【追加】お仕事の種類の追加保存ハンドラー
+  const handleAddJobType = async () => {
+    if (!newJobTypeName.trim()) return;
+    setIsUpdatingJobType(true);
+    try {
+      const docRef = await addDoc(collection(db, "customJobTypes"), {
+        name: newJobTypeName.trim(),
+        createdAt: serverTimestamp()
+      });
+      setCustomJobTypes([...customJobTypes, { id: docRef.id, name: newJobTypeName.trim() }]);
+      setNewJobTypeName(""); // 入力欄をクリア
+    } catch (e) {
+      console.error(e);
+      alert("種類の追加に失敗しました。");
+    } finally {
+      setIsUpdatingJobType(false);
+    }
+  };
+
+  // 💡【追加】お仕事の種類の削除ハンドラー
+  const handleDeleteJobType = async (id: string, name: string) => {
+    setIsUpdatingJobType(true);
+    try {
+      await deleteDoc(doc(db, "customJobTypes", id));
+      setCustomJobTypes(customJobTypes.filter(t => t.id !== id));
+      
+      // もし削除された種類が現在選択中のものだった場合は、デフォルトに戻す
+      if (jobType === name) {
+        setJobType('form_posting');
+      }
+    } catch (e) {
+      console.error(e);
+      alert("種類の削除に失敗しました。");
+    } finally {
+      setIsUpdatingJobType(false);
+    }
+  };
+
   const handleAddDetailItem = () => {
     setFormData({
       ...formData,
@@ -130,7 +197,6 @@ function JobForm() {
     setFormData({ ...formData, detailItems: newItems });
   };
 
-  // 💡【追加】手順ステップを操作するハンドラー群
   const handleProcedureChange = (index: number, value: string) => {
     const newProcedures = [...formData.procedures];
     newProcedures[index] = value;
@@ -142,7 +208,7 @@ function JobForm() {
   };
 
   const handleRemoveProcedure = (index: number) => {
-    if (formData.procedures.length <= 1) return; // 最低1つは残すガード
+    if (formData.procedures.length <= 1) return;
     const newProcedures = formData.procedures.filter((_, i) => i !== index);
     setFormData({ ...formData, procedures: newProcedures });
   };
@@ -162,7 +228,7 @@ function JobForm() {
     
     if (existingJobId) {
       setModalTitle(status === 'open' ? "🔓 編集内容の公開適用" : "📁 編集内容の下書き保存");
-      setModalMessage(`修正した内容を既存の案件（ID: ${existingJobId}）に上書き保存しますか？\n\nタイトル：${formData.title}`);
+      setModalMessage(`修正した内容を既存の案件に上書き保存しますか？\n\nタイトル：${formData.title}`);
     } else {
       if (status === 'open') {
         setModalTitle("🔓 案件公開の確認");
@@ -193,12 +259,10 @@ function JobForm() {
 
       if (existingJobId) {
         const jobRef = doc(db, "jobs", existingJobId);
-        
         const jobSnap = await getDoc(jobRef);
         if (jobSnap.exists()) {
           const currentJobData = jobSnap.data();
           const currentStatus = currentJobData.status || "draft";
-          
           const isAlreadyStarted = ["assigned", "working", "paused", "review", "completed"].includes(currentStatus);
           
           if (isAlreadyStarted) {
@@ -228,15 +292,18 @@ function JobForm() {
       }
 
       if (finalStatus === 'open' && isStatusChangedToOpen && shouldNotify) {
-        const typeLabel = jobType === 'form_posting' ? "✉️ フォーム投稿" : "📋 リスト作成";
-        
+        // 💡【修正】カスタム種類の場合もそのまま通知ラベルに適用
+        const typeLabel = jobType === 'form_posting' ? "✉️ フォーム投稿" 
+                        : jobType === 'list_creation' ? "📋 リスト作成" 
+                        : jobType;
+
         const chatTemplate = `🔥🔥🔥spotworkに新しい案件が追記されました🔥🔥🔥
 
 ✏️追加された案件：${formData.title}
 
 🏢クライアント：${formData.scClient || "（未入力）"}
 
-📚フォーム/リスト：${typeLabel}
+📚仕事の種類：${typeLabel}
 
 🔢件数：${formData.count} 件
 
@@ -269,7 +336,10 @@ ${noticeMessage || "（特になし）"}
             <span className="text-xs">💡</span>
             <div className="space-y-1">
               <h3 className="text-xs font-black text-slate-800">
-                {jobType === 'form_posting' ? '✉️ フォーム投稿案件の事前準備' : '📋 リスト作成案件の事前準備'}
+                {/* 💡【修正】選ばれた種類に合わせて見出しを自動調整 */}
+                {jobType === 'form_posting' ? '✉️ フォーム投稿案件の事前準備' 
+                 : jobType === 'list_creation' ? '📋 リスト作成案件の事前準備'
+                 : `${jobType} 案件の事前準備`}
               </h3>
               <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
                 案件の新規作成にあたって、まずは事前準備のシート作成をしてください。<br />
@@ -298,7 +368,7 @@ ${noticeMessage || "（特になし）"}
                   📁 2. フォーム用 格納フォルダを開く ↗
                 </a>
               </>
-            ) : (
+            ) : jobType === 'list_creation' ? (
               <>
                 <a 
                   href="https://docs.google.com/spreadsheets/d/1HfFC_0AvmNUZOByMhYN4aKzl4g_mmPHsxxj2o0pn6pc/edit?usp=sharing" 
@@ -317,6 +387,11 @@ ${noticeMessage || "（特になし）"}
                   📁 2. リスト用 格納フォルダを開く ↗
                 </a>
               </>
+            ) : (
+              // 💡【追加】カスタム種類が選ばれたときの汎用ガイドメッセージ
+              <div className="bg-white border border-slate-300 text-slate-700 text-[10px] font-black px-2.5 py-1 rounded shadow-sm inline-flex items-center gap-1">
+                📝 追加されたお仕事の種類です。必要に応じて作業詳細にマニュアルなどを追加してください。
+              </div>
             )}
           </div>
         </section>
@@ -325,32 +400,60 @@ ${noticeMessage || "（特になし）"}
         <section className="space-y-2">
           <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">基本設定</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
-            <div className="grid grid-cols-2 gap-2">
-              <button 
-                type="button"
-                onClick={() => setJobType('form_posting')}
-                className={`py-2.5 rounded border-2 text-xs font-black transition-colors ${
-                  jobType === 'form_posting' 
-                    ? 'bg-[#5CA685] text-white border-transparent' 
-                    : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
-                }`}
-              >
-                ✉️ フォーム投稿
-              </button>
-              <button 
-                type="button"
-                onClick={() => setJobType('list_creation')}
-                className={`py-2.5 rounded border-2 text-xs font-black transition-colors ${
-                  jobType === 'list_creation' 
-                    ? 'bg-[#5CA685] text-white border-transparent' 
-                    : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
-                }`}
-              >
-                📋 リスト作成
-              </button>
+            
+            {/* 💡【改修】お仕事の種類マスター管理連携 */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">お仕事の種類</label>
+                <button 
+                  type="button" 
+                  onClick={() => setJobTypeSettingsOpen(true)}
+                  className="text-[10px] font-black text-[#5CA685] hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  ⚙️ 種類を追加・管理
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button 
+                  type="button"
+                  onClick={() => setJobType('form_posting')}
+                  className={`py-2 px-3 rounded border-2 text-[11px] font-black transition-colors ${
+                    jobType === 'form_posting' 
+                      ? 'bg-[#5CA685] text-white border-transparent shadow-sm' 
+                      : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
+                  }`}
+                >
+                  ✉️ フォーム投稿
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setJobType('list_creation')}
+                  className={`py-2 px-3 rounded border-2 text-[11px] font-black transition-colors ${
+                    jobType === 'list_creation' 
+                      ? 'bg-[#5CA685] text-white border-transparent shadow-sm' 
+                      : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
+                  }`}
+                >
+                  📋 リスト作成
+                </button>
+                {customJobTypes.map(cType => (
+                  <button 
+                    key={cType.id}
+                    type="button"
+                    onClick={() => setJobType(cType.name)}
+                    className={`py-2 px-3 rounded border-2 text-[11px] font-black transition-colors ${
+                      jobType === cType.name 
+                        ? 'bg-[#5CA685] text-white border-transparent shadow-sm' 
+                        : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
+                    }`}
+                  >
+                    {cType.name}
+                  </button>
+                ))}
+              </div>
             </div>
             
-            <div className="space-y-1">
+            <div className="space-y-1 pt-2 border-t border-slate-100">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">案件タイトル</label>
               <input 
                 required
@@ -388,9 +491,9 @@ ${noticeMessage || "（特になし）"}
           </div>
         </section>
 
-        {/* 2. 💡【新設】作業詳細一律化セクション */}
+        {/* 2. 作業詳細セクション（一律化対応済） */}
         <section className="space-y-2">
-          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">作業詳細（リンク・テキスト等の設定）</h2>
+          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">作業詳細（リンク・指示書設定）</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
             
             <div className="space-y-1">
@@ -435,7 +538,7 @@ ${noticeMessage || "（特になし）"}
                       <button
                         type="button"
                         onClick={() => handleRemoveDetailItem(idx)}
-                        className="p-2 text-slate-400 hover:text-rose-600 transition-colors shrink-0"
+                        className="p-2 text-slate-400 hover:text-rose-600 transition-colors shrink-0 cursor-pointer"
                         title="この項目を削除"
                       >
                         🗑️
@@ -473,7 +576,7 @@ ${noticeMessage || "（特になし）"}
               <button
                 type="button"
                 onClick={handleAddDetailItem}
-                className="w-full py-2.5 bg-white border-2 border-dashed border-[#5CA685] text-[#5CA685] hover:bg-emerald-50 rounded text-xs font-black transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
+                className="w-full py-2.5 bg-white border-2 border-dashed border-[#5CA685] text-[#5CA685] hover:bg-emerald-50 rounded text-xs font-black transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
               >
                 ➕ 作業詳細の項目を追加する
               </button>
@@ -481,7 +584,7 @@ ${noticeMessage || "（特になし）"}
           </div>
         </section>
 
-        {/* 3. 💡【新設】作業手順セクション（動的追加対応） */}
+        {/* 3. 作業手順セクション（動的追加対応済） */}
         <section className="space-y-2">
           <div className="flex justify-between items-end border-l-2 border-emerald-600 pl-2">
             <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
@@ -569,10 +672,82 @@ ${noticeMessage || "（特になし）"}
             </button>
           </div>
         </div>
-
       </form>
 
-      {/* モーダル */}
+      {/* 💡【新設】お仕事種類の管理・追加用モーダル */}
+      {jobTypeSettingsOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-[60] font-sans antialiased">
+          <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
+            <div className="bg-[#5CA685] text-white px-4 py-3 font-black text-xs flex justify-between items-center tracking-wide select-none">
+              <span>⚙️ お仕事の種類の追加・管理</span>
+            </div>
+            <div className="p-6 bg-white space-y-4">
+              <p className="text-[11px] font-bold text-slate-600 leading-relaxed whitespace-pre-wrap">
+                新しいお仕事の種類を追加したり、不要になった種類を削除できます。（※基本の2種類はシステム固定のため削除できません）
+              </p>
+              
+              <div className="space-y-2">
+                {/* 基本タイプ表示（固定） */}
+                <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2.5 rounded">
+                  <span className="text-xs font-bold text-slate-500">✉️ フォーム投稿</span>
+                  <span className="text-[9px] text-slate-400 font-bold bg-white px-1.5 py-0.5 border border-slate-200 rounded">固定</span>
+                </div>
+                <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2.5 rounded">
+                  <span className="text-xs font-bold text-slate-500">📋 リスト作成</span>
+                  <span className="text-[9px] text-slate-400 font-bold bg-white px-1.5 py-0.5 border border-slate-200 rounded">固定</span>
+                </div>
+                
+                {/* オーナーが追加したカスタムタイプ一覧 */}
+                {customJobTypes.map(c => (
+                  <div key={c.id} className="flex justify-between items-center bg-white border-2 border-slate-200 p-2 rounded shadow-2xs">
+                    <span className="text-xs font-bold text-slate-800 pl-1">{c.name}</span>
+                    <button 
+                      type="button" 
+                      onClick={() => handleDeleteJobType(c.id, c.name)}
+                      disabled={isUpdatingJobType}
+                      className="text-slate-400 hover:text-rose-600 p-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+                      title="この種類を削除"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* 新規追加入力フォーム */}
+              <div className="flex gap-2 pt-3 border-t border-slate-100">
+                <input 
+                  type="text" 
+                  placeholder="追加する名前（例：🎥 動画編集）" 
+                  value={newJobTypeName}
+                  onChange={(e) => setNewJobTypeName(e.target.value)}
+                  className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]"
+                />
+                <button 
+                  type="button"
+                  onClick={handleAddJobType}
+                  disabled={isUpdatingJobType || !newJobTypeName.trim()}
+                  className="px-4 bg-[#5CA685] hover:bg-[#4A9272] text-white font-black text-xs rounded transition-colors shadow-sm disabled:opacity-50 cursor-pointer shrink-0"
+                >
+                  追加
+                </button>
+              </div>
+              
+            </div>
+            <div className="flex border-t border-slate-100 bg-slate-50/50 p-3 justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setJobTypeSettingsOpen(false)}
+                className="px-6 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 font-black text-xs rounded transition-colors outline-none tracking-wide cursor-pointer"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* サブミット確認モーダル */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] flex items-center justify-center p-4 z-50 font-sans antialiased transition-all">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-lg shadow-xl overflow-hidden text-slate-900">
@@ -637,15 +812,5 @@ ${noticeMessage || "（特になし）"}
         </div>
       )}
     </div>
-  );
-}
-
-export default function NewJobPage() {
-  return (
-    <OwnerShell title="新規案件の作成" subTitle="案件の掲載設定">
-      <Suspense fallback={<div className="p-10 text-center text-slate-400 text-xs font-bold">フォームを表示中...</div>}>
-        <JobForm />
-      </Suspense>
-    </OwnerShell>
   );
 }
