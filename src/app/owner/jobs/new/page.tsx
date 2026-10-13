@@ -2,14 +2,11 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
-// Firestoreから現在のデータを1回読み込むために「getDoc」を追加インポート
 import { collection, addDoc, doc, updateDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import OwnerShell from "@/components/OwnerShell";
-// MEMBERS通知用の共通関数をインポート
 import { sendMembersNotification } from "@/lib/members";
 
-// 簡単なURLバリデーション関数（ボタンの表示・非表示用）
 const isValidUrl = (url: string) => {
   try {
     return url.startsWith("http://") || url.startsWith("https://");
@@ -18,45 +15,48 @@ const isValidUrl = (url: string) => {
   }
 };
 
+// 💡【新設】作業詳細の自由追加項目用のデータ型定義
+interface DetailItem {
+  title: string;
+  type: 'link' | 'text';
+  value: string;
+}
+
 function JobForm() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  
+  // ※お仕事の種類は次回マスター化して自由に追加できるように改修します（今回は一旦そのまま保持）
   const [jobType, setJobType] = useState<'form_posting' | 'list_creation'>('form_posting');
   
-  // 上書き編集（Editモード）かどうかを判定するためのID退避用ステート
   const [existingJobId, setExistingJobId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     title: "",
-    reward: 0,       // 報酬はフォームから撤去し、裏で0固定で送信
-    count: 100,      // 予定作業件数
-    workerLimit: 1,  // 募集人数
+    reward: 0,
+    count: 100,
+    workerLimit: 1,
     deadline: "",
     urgency: "1",
-    siteUrl: "",
-    targetItems: "", // リスト作成 > 「入力項目」URL用
-    formContent: "", // フォーム投稿 > 「送信文面内容」URL用
-    inputInfo: "",   // フォーム投稿 > 「入力情報」URL用
-    additionalLinkTitle: "", // 追加リンク用の任意タイトル
-    additionalLinkUrl: "",   // 追加リンク用のURL
-    scClient: "",    // SCクライアント
-    procedures: ["", "", ""], // 初期値は3つ
-    memo: ""         // メモ欄
+    scClient: "",
+    // 💡【一律化】古い固定リンク枠を廃止し、自由に追加できる配列枠に変更
+    detailItems: [
+      { title: "指示書・マニュアル", type: "link", value: "" },
+      { title: "作業用リスト", type: "link", value: "" }
+    ] as DetailItem[],
+    procedures: ["", "", ""], // 手順の初期値
+    memo: ""
   });
 
-  // カスタムポップアップ管理用のステート群
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
   const [modalMessage, setModalMessage] = useState("");
   const [modalTargetStatus, setModalTargetStatus] = useState<'open' | 'draft' | null>(null);
 
-  // チャット通知用の申し送りメッセージを管理するステート
   const [noticeMessage, setNoticeMessage] = useState("");
-  
-  // チャット通知を送信するかどうかのチェックボックス用ステート（デフォルトON）
   const [shouldNotify, setShouldNotify] = useState(true);
 
-  // コピーボタン・編集ボタンからパスされた記憶データをキャッチしてフォームの初期値へ一括流し込み
+  // コピーボタン・編集ボタンからパスされた記憶データをキャッチして復元
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem("duplicate_job_base");
@@ -64,6 +64,25 @@ function JobForm() {
         const baseData = JSON.parse(stored);
         
         if (baseData.jobType) setJobType(baseData.jobType);
+
+        // 💡【安全装置】旧バージョンの固定リンクデータが残っていた場合、新しい自由追加形式に自動変換して復元する
+        let restoredDetailItems: DetailItem[] = [];
+        if (Array.isArray(baseData.detailItems) && baseData.detailItems.length > 0) {
+          restoredDetailItems = baseData.detailItems;
+        } else {
+          if (baseData.formContent) restoredDetailItems.push({ title: "送信文面内容", type: "link", value: baseData.formContent });
+          if (baseData.inputInfo) restoredDetailItems.push({ title: "入力情報リスト", type: "link", value: baseData.inputInfo });
+          if (baseData.siteUrl) restoredDetailItems.push({ title: "抽出サイトURL", type: "link", value: baseData.siteUrl });
+          if (baseData.targetItems) restoredDetailItems.push({ title: "入力項目指示書", type: "link", value: baseData.targetItems });
+          if (baseData.additionalLinkUrl) restoredDetailItems.push({ title: baseData.additionalLinkTitle || "追加リンク", type: "link", value: baseData.additionalLinkUrl });
+          
+          if (restoredDetailItems.length === 0) {
+            restoredDetailItems = [
+              { title: "指示書・マニュアル", type: "link", value: "" },
+              { title: "作業用リスト", type: "link", value: "" }
+            ];
+          }
+        }
 
         setFormData(prev => ({
           ...prev,
@@ -74,12 +93,7 @@ function JobForm() {
           urgency: baseData.urgency || "1",
           deadline: baseData.deadline || "",
           scClient: baseData.scClient || "",
-          siteUrl: baseData.siteUrl || "",
-          targetItems: baseData.targetItems || "",
-          formContent: baseData.formContent || "",
-          inputInfo: baseData.inputInfo || "",
-          additionalLinkTitle: baseData.additionalLinkTitle || "",
-          additionalLinkUrl: baseData.additionalLinkUrl || "",
+          detailItems: restoredDetailItems,
           procedures: Array.isArray(baseData.procedures) && baseData.procedures.length > 0 
                       ? baseData.procedures 
                       : ["", "", ""],
@@ -97,6 +111,42 @@ function JobForm() {
     }
   }, []);
 
+  // 💡【追加】作業詳細の自由入力枠を操作するハンドラー群
+  const handleAddDetailItem = () => {
+    setFormData({
+      ...formData,
+      detailItems: [...formData.detailItems, { title: "", type: "link", value: "" }]
+    });
+  };
+
+  const handleRemoveDetailItem = (index: number) => {
+    const newItems = formData.detailItems.filter((_, i) => i !== index);
+    setFormData({ ...formData, detailItems: newItems });
+  };
+
+  const handleDetailItemChange = (index: number, field: keyof DetailItem, val: string) => {
+    const newItems = [...formData.detailItems];
+    newItems[index] = { ...newItems[index], [field]: val };
+    setFormData({ ...formData, detailItems: newItems });
+  };
+
+  // 💡【追加】手順ステップを操作するハンドラー群
+  const handleProcedureChange = (index: number, value: string) => {
+    const newProcedures = [...formData.procedures];
+    newProcedures[index] = value;
+    setFormData({ ...formData, procedures: newProcedures });
+  };
+
+  const handleAddProcedure = () => {
+    setFormData({ ...formData, procedures: [...formData.procedures, ""] });
+  };
+
+  const handleRemoveProcedure = (index: number) => {
+    if (formData.procedures.length <= 1) return; // 最低1つは残すガード
+    const newProcedures = formData.procedures.filter((_, i) => i !== index);
+    setFormData({ ...formData, procedures: newProcedures });
+  };
+
   const triggerSubmitModal = (status: 'open' | 'draft') => {
     if (!formData.title.trim()) {
       const fakeSubmitButton = document.getElementById("hidden-submit-trigger");
@@ -107,7 +157,7 @@ function JobForm() {
     setModalTargetStatus(status);
     if (status === 'open') {
       setNoticeMessage("");
-      setShouldNotify(true); // モーダルを開くときはデフォルトでチェックをONにする
+      setShouldNotify(true);
     }
     
     if (existingJobId) {
@@ -131,7 +181,6 @@ function JobForm() {
     setSubmitting(true);
 
     try {
-      // 上書きする基本データを組み立て（statusは条件に応じて後から決定）
       const sharedFields: any = {
         ...formData,
         jobType,
@@ -140,41 +189,34 @@ function JobForm() {
       };
 
       let finalStatus = modalTargetStatus;
-      let isStatusChangedToOpen = modalTargetStatus === 'open'; // 本当に新規公開された時だけ通知するための判定フラグ
+      let isStatusChangedToOpen = modalTargetStatus === 'open';
 
       if (existingJobId) {
         const jobRef = doc(db, "jobs", existingJobId);
         
-        // 既存案件の現在のステータスを裏側でチェックする
         const jobSnap = await getDoc(jobRef);
         if (jobSnap.exists()) {
           const currentJobData = jobSnap.data();
           const currentStatus = currentJobData.status || "draft";
           
-          // すでにワーカーが紐づいて動いている・完了しているステータス一覧
           const isAlreadyStarted = ["assigned", "working", "paused", "review", "completed"].includes(currentStatus);
           
           if (isAlreadyStarted) {
-            // 🛑 進行中・完了案件の場合は、ステータスの強制巻き戻しを「完全ブロック」して現在の状態を維持する！
             finalStatus = currentStatus;
-            isStatusChangedToOpen = false; // 進行中の文面修正なので、チャット通知もスキップ
+            isStatusChangedToOpen = false;
           } else {
-            // まだ誰も請け負っていない（下書きやopen、期限切れ）場合、
-            // すでに公開中（open）の案件を再度「公開状態で保存」しただけなら再通知をスキップ
             if (currentStatus === 'open' && modalTargetStatus === 'open') {
               isStatusChangedToOpen = false;
             }
           }
         }
 
-        // 確定したステータスを適用してアップデート
         await updateDoc(jobRef, {
           ...sharedFields,
           status: finalStatus
         });
         router.push(`/owner/jobs/${existingJobId}`);
       } else {
-        // 新規作成の場合は、ボタンの指定通りのステータス（openかdraft）で作成
         await addDoc(collection(db, "jobs"), {
           ...sharedFields,
           status: finalStatus,
@@ -185,7 +227,6 @@ function JobForm() {
         router.push("/owner/jobs");
       }
 
-      // 新規に公開（statusが'open'に確定）され、かつ通知チェックがONのときのみチャットを飛ばす
       if (finalStatus === 'open' && isStatusChangedToOpen && shouldNotify) {
         const typeLabel = jobType === 'form_posting' ? "✉️ フォーム投稿" : "📋 リスト作成";
         
@@ -214,27 +255,8 @@ ${noticeMessage || "（特になし）"}
     } finally {
       setSubmitting(false);
       setModalTargetStatus(null);
-      setNoticeMessage(""); // 送信後にコメントをきれいにリセット
+      setNoticeMessage("");
     }
-  };
-
-  // 💡【変更箇所】手順入力の変更ハンドラー
-  const handleProcedureChange = (index: number, value: string) => {
-    const newProcedures = [...formData.procedures];
-    newProcedures[index] = value;
-    setFormData({ ...formData, procedures: newProcedures });
-  };
-
-  // 💡【追加機能】新しい手順ステップを増やすハンドラー
-  const handleAddProcedure = () => {
-    setFormData({ ...formData, procedures: [...formData.procedures, ""] });
-  };
-
-  // 💡【追加機能】特定の手順ステップを削除するハンドラー
-  const handleRemoveProcedure = (index: number) => {
-    if (formData.procedures.length <= 1) return; // 最後の1つは消せないようにガード
-    const newProcedures = formData.procedures.filter((_, i) => i !== index);
-    setFormData({ ...formData, procedures: newProcedures });
   };
 
   return (
@@ -366,12 +388,15 @@ ${noticeMessage || "（特になし）"}
           </div>
         </section>
 
-        {/* 2. 作業詳細セクション */}
+        {/* 2. 💡【新設】作業詳細一律化セクション */}
         <section className="space-y-2">
-          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">作業詳細（リンク設定）</h2>
+          <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">作業詳細（リンク・テキスト等の設定）</h2>
           <div className="bg-white p-4 rounded border-2 border-slate-300 space-y-4 shadow-sm">
+            
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">SCクライアント</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                SCクライアント名 <span className="text-emerald-700 font-bold">（固定）</span>
+              </label>
               <input 
                 className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685] transition-colors" 
                 placeholder="案件に紐づくクライアント名を入力"
@@ -380,114 +405,83 @@ ${noticeMessage || "（特になし）"}
               />
             </div>
 
-            {jobType === 'form_posting' ? (
-              <div className="space-y-4 pt-1">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">送信文面内容（スプレッドシート等のURL）</label>
-                  <div className="flex gap-2">
-                    <input 
-                      type="url" 
-                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#5CA685] font-mono" 
-                      placeholder="https://docs.google.com/spreadsheets/..." 
-                      value={formData.formContent} 
-                      onChange={e => setFormData({...formData, formContent: e.target.value})} 
-                    />
-                    {isValidUrl(formData.formContent) && (
-                      <a href={formData.formContent} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
-                        ↗ リンクを開く
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力情報（リスト等のURL）</label>
-                  <div className="flex gap-2">
-                    <input 
-                      type="url" 
-                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" 
-                      placeholder="https://..." 
-                      value={formData.inputInfo} 
-                      onChange={e => setFormData({...formData, inputInfo: e.target.value})} 
-                    />
-                    {isValidUrl(formData.inputInfo) && (
-                      <a href={formData.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
-                        ↗ リンクを開く
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 pt-3 border-t border-dashed border-slate-200">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">その他追加リンク（任意設定）</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <input 
-                      type="text" 
-                      className="p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" 
-                      placeholder="リンクの名称（例：手順マニュアル）" 
-                      value={formData.additionalLinkTitle} 
-                      onChange={e => setFormData({...formData, additionalLinkTitle: e.target.value})} 
-                    />
-                    <div className="sm:col-span-2 flex gap-2">
-                      <input 
-                        type="url" 
-                        className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#5CA685] font-mono" 
-                        placeholder="https://..." 
-                        value={formData.additionalLinkUrl} 
-                        onChange={e => setFormData({...formData, additionalLinkUrl: e.target.value})} 
-                      />
-                      {isValidUrl(formData.additionalLinkUrl) && (
-                        <a href={formData.additionalLinkUrl} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
-                          ↗ リンクを開く
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
+            <div className="space-y-3 pt-2 border-t border-slate-200">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  作業用リンク・指示テキスト項目（自由追加）
+                </label>
+                <span className="text-[10px] text-slate-400 font-bold">全 {formData.detailItems.length} 項目</span>
               </div>
-            ) : (
-              <>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">抽出サイトURL</label>
-                  <div className="flex gap-2">
-                    <input 
-                      type="url" 
-                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" 
-                      placeholder="https://example.com" 
-                      value={formData.siteUrl} 
-                      onChange={e => setFormData({...formData, siteUrl: e.target.value})} 
-                    />
-                    {isValidUrl(formData.siteUrl) && (
-                      <a href={formData.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
-                        ↗ リンクを開く
-                      </a>
-                    )}
-                  </div>
-                </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">入力項目（指示書等のURL）</label>
-                  <div className="flex gap-2">
-                    <input 
-                      type="url" 
-                      className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]" 
-                      placeholder="https://..." 
-                      value={formData.targetItems} 
-                      onChange={e => setFormData({...formData, targetItems: e.target.value})} 
-                    />
-                    {isValidUrl(formData.targetItems) && (
-                      <a href={formData.targetItems} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
-                        ↗ リンクを開く
-                      </a>
+              <div className="space-y-2">
+                {formData.detailItems.map((item, idx) => (
+                  <div key={idx} className="bg-slate-50 p-3 rounded border-2 border-slate-200 space-y-2 relative group">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <input 
+                        type="text"
+                        className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-bold outline-none focus:border-[#5CA685]"
+                        placeholder="項目名（例: 指示書、抽出サイト）"
+                        value={item.title}
+                        onChange={e => handleDetailItemChange(idx, "title", e.target.value)}
+                      />
+                      <select 
+                        className="p-2 bg-white border-2 border-slate-300 rounded text-xs font-black outline-none focus:border-[#5CA685] shrink-0"
+                        value={item.type}
+                        onChange={e => handleDetailItemChange(idx, "type", e.target.value as 'link' | 'text')}
+                      >
+                        <option value="link">🔗 リンク (URL)</option>
+                        <option value="text">📝 テキスト</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDetailItem(idx)}
+                        className="p-2 text-slate-400 hover:text-rose-600 transition-colors shrink-0"
+                        title="この項目を削除"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+
+                    {item.type === 'link' ? (
+                      <div className="flex gap-2">
+                        <input 
+                          type="url"
+                          className="flex-1 p-2 bg-white border-2 border-slate-300 rounded text-xs font-mono font-medium outline-none focus:border-[#5CA685]"
+                          placeholder="https://docs.google.com/... などのURLを入力"
+                          value={item.value}
+                          onChange={e => handleDetailItemChange(idx, "value", e.target.value)}
+                        />
+                        {isValidUrl(item.value) && (
+                          <a href={item.value} target="_blank" rel="noopener noreferrer" className="bg-slate-100 hover:bg-slate-200 border-2 border-slate-300 px-3 flex items-center rounded text-[11px] font-black text-[#5CA685] whitespace-nowrap transition-colors">
+                            ↗ 開く
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <textarea 
+                        rows={2}
+                        className="w-full p-2 bg-white border-2 border-slate-300 rounded text-xs font-medium outline-none focus:border-[#5CA685]"
+                        placeholder="ワーカーへ指示する内容を入力してください"
+                        value={item.value}
+                        onChange={e => handleDetailItemChange(idx, "value", e.target.value)}
+                      />
                     )}
                   </div>
-                </div>
-              </>
-            )}
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleAddDetailItem}
+                className="w-full py-2.5 bg-white border-2 border-dashed border-[#5CA685] text-[#5CA685] hover:bg-emerald-50 rounded text-xs font-black transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
+              >
+                ➕ 作業詳細の項目を追加する
+              </button>
+            </div>
           </div>
         </section>
 
-        {/* 3. 作業手順セクション（💡動的追加・削除対応） */}
+        {/* 3. 💡【新設】作業手順セクション（動的追加対応） */}
         <section className="space-y-2">
           <div className="flex justify-between items-end border-l-2 border-emerald-600 pl-2">
             <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
@@ -508,8 +502,6 @@ ${noticeMessage || "（特になし）"}
                     value={p}
                     onChange={e => handleProcedureChange(i, e.target.value)}
                   />
-                  
-                  {/* 要素が2個以上の時だけ削除ボタンを表示 */}
                   {formData.procedures.length > 1 && (
                     <button
                       type="button"
@@ -592,7 +584,6 @@ ${noticeMessage || "（特になし）"}
                 {modalMessage}
               </p>
 
-              {/* 公開時（'open'）のみ、モーダル内に通知のチェックボックスを表示 */}
               {modalTargetStatus === 'open' && (
                 <div className="space-y-3 pt-2 border-t border-slate-100">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -607,7 +598,6 @@ ${noticeMessage || "（特になし）"}
                     </span>
                   </label>
 
-                  {/* チェックが入っているときだけメッセージ入力欄を展開 */}
                   {shouldNotify && (
                     <div className="space-y-1 animate-fadeIn">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
