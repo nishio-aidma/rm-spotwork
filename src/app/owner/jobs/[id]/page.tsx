@@ -54,6 +54,12 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         if (snap.exists()) {
           const data = snap.data();
           
+          // 💡【調査ログ】データベースに実際に保存されている内容をそのまま出力
+          console.log("=== 🔍 データベース保存内容の生データ ===");
+          console.log("📄 job全体データ:", data);
+          console.log("📄 保存されているdetailItems:", data.detailItems);
+          console.log("=== 🔍 調査終了 ===");
+
           let processedJob = { id: snap.id, ...data } as any;
           if (data.workerId && !data.workers) {
             processedJob.workers = {
@@ -130,13 +136,11 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     return `${h}h ${m}m`;
   };
 
-  // URLバリデーション判定用ヘルパー
+  // 💡【安全強化】前後のスペースを削除してからURL判定を行う
   const isValidUrl = (url: string) => {
-    try {
-      return url.startsWith("http://") || url.startsWith("https://");
-    } catch {
-      return false;
-    }
+    if (!url || typeof url !== "string") return false;
+    const cleanUrl = url.trim();
+    return cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://");
   };
 
   // クリップボードコピー関数
@@ -174,7 +178,6 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       }
 
       const jobUrl = `https://rm-spotwork.vercel.app/owner/jobs/${targetJob.id}`;
-      
       const jobTypeName = targetJob.jobType === "form_posting" ? "✉️ フォーム投稿" 
                         : targetJob.jobType === "list_creation" ? "📋 リスト作成" 
                         : (targetJob.jobType || "未設定");
@@ -403,7 +406,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         count: job.count || 100,
         workerLimit: job.workerLimit || 1,
         deadline: job.deadline || "",
-        detailItems: job.detailItems || [], // 新しい作業詳細を確実に引き継ぎ
+        detailItems: job.detailItems || [],
         inputInfo: job.inputInfo || "",
         targetItems: job.targetItems || "",
         formContent: job.formContent || "",
@@ -433,13 +436,11 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
   const workerLimit = job.workerLimit || 1;
 
-  // 💡【修正】新形式（detailItems）の読み込みと、旧形式（formContentなど）の統合表示処理を安全に改善
+  // 💡【安全な統合】新形式と旧形式の表示配列の作成
   let displayDetailItems: any[] = [];
   if (job.detailItems && Array.isArray(job.detailItems) && job.detailItems.length > 0) {
-    // 新形式のデータがある場合はそのまま使用する
     displayDetailItems = job.detailItems;
   } else {
-    // 古い形式のデータしか無い場合は、新形式の見た目に変換して配列に詰め込む（救済処理）
     if (job.formContent) displayDetailItems.push({ title: "送信文面内容", type: "link", value: job.formContent });
     if (job.inputInfo) displayDetailItems.push({ title: "入力情報リスト", type: "link", value: job.inputInfo });
     if (job.siteUrl) displayDetailItems.push({ title: "抽出サイトURL", type: "link", value: job.siteUrl });
@@ -534,36 +535,48 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           </div>
 
-          {/* 💡【修正】作業詳細セクション */}
+          {/* 作業詳細セクション */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
             <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
               🔗 作業詳細（リンク・指示テキスト設定）
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
               {displayDetailItems.length > 0 ? (
-                displayDetailItems.map((item, idx) => (
-                  <div key={idx} className="flex flex-col bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold gap-1.5">
-                    <span className="text-slate-600 border-b border-slate-200 pb-1">{item.title || "無題の項目"}</span>
-                    {item.type === 'link' ? (
-                      item.value && isValidUrl(item.value) ? (
-                        <a 
-                          href={item.value} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1.5 rounded transition-colors shadow-sm cursor-pointer text-center truncate mt-1"
-                        >
-                          ↗ リンクを開く
-                        </a>
+                displayDetailItems.map((item, idx) => {
+                  const hasValue = item.value && String(item.value).trim().length > 0;
+                  const isLinkValid = isValidUrl(item.value);
+
+                  return (
+                    <div key={idx} className="flex flex-col bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold gap-1.5">
+                      <span className="text-slate-600 border-b border-slate-200 pb-1">{item.title || "無題の項目"}</span>
+                      {item.type === 'link' ? (
+                        hasValue ? (
+                          isLinkValid ? (
+                            <a 
+                              href={item.value.trim()} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1.5 rounded transition-colors shadow-sm cursor-pointer text-center truncate mt-1"
+                            >
+                              ↗ リンクを開く
+                            </a>
+                          ) : (
+                            // 💡 URL形式でない場合でも、何が入っているかわかるように表示
+                            <div className="text-[10px] text-amber-700 bg-amber-50 p-1.5 rounded border border-amber-200 break-all mt-1">
+                              ⚠️ 不正なURL形式: {item.value}
+                            </div>
+                          )
+                        ) : (
+                          <span className="text-slate-400 font-normal text-[10px] text-center py-1.5 mt-1 border border-dashed border-slate-300 rounded bg-white">未登録</span>
+                        )
                       ) : (
-                        <span className="text-slate-400 font-normal text-[10px] text-center py-1.5 mt-1 border border-dashed border-slate-300 rounded bg-white">未登録</span>
-                      )
-                    ) : (
-                      <div className="text-xs font-medium text-slate-800 whitespace-pre-wrap pt-1 leading-relaxed">
-                        {item.value || <span className="text-slate-400 font-normal italic">未登録</span>}
-                      </div>
-                    )}
-                  </div>
-                ))
+                        <div className="text-xs font-medium text-slate-800 whitespace-pre-wrap pt-1 leading-relaxed">
+                          {hasValue ? item.value : <span className="text-slate-400 font-normal italic">未登録</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               ) : (
                 <div className="col-span-full p-4 text-center text-[10px] text-slate-400 italic">作業詳細の登録はありません。</div>
               )}
