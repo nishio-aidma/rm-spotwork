@@ -64,7 +64,7 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               };
             }
 
-            // 💡【ズレ解消の超重要ロジック】固定値ではなく、本物の打刻ログ(workLogs)からこの案件の時間を合算する
+            // 本物の打刻ログ(workLogs)からこの案件の時間を合算
             const logsQuery = query(collection(db, "workLogs"), where("jobId", "==", id));
             const logsSnap = await getDocs(logsQuery);
             const realTimeMap: { [key: string]: number } = {};
@@ -76,7 +76,6 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
               }
             });
 
-            // 算出した正確なリアルタイム合計時間を、表示用のデータに上書き反映する
             if (processedJob.workers) {
               Object.keys(processedJob.workers).forEach(uid => {
                 processedJob.workers[uid].totalAccumulatedSeconds = realTimeMap[uid] || 0;
@@ -123,6 +122,13 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     const m = String(date.getMinutes()).padStart(2, "0");
     const s = String(date.getSeconds()).padStart(2, "0");
     return `${h}:${m}:${s}`;
+  };
+
+  // URL判定用ヘルパー（前後のスペースを削除して判定）
+  const isValidUrl = (url: string) => {
+    if (!url || typeof url !== "string") return false;
+    const cleanUrl = url.trim();
+    return cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://");
   };
 
   // クリップボードコピー
@@ -419,6 +425,18 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
     return status === "review" || status === "completed";
   });
 
+  // 💡【新仕様】新形式（detailItems）と旧形式の自動変換・統合処理
+  let displayDetailItems: any[] = [];
+  if (job.detailItems && Array.isArray(job.detailItems) && job.detailItems.length > 0) {
+    displayDetailItems = job.detailItems;
+  } else {
+    if (job.formContent) displayDetailItems.push({ title: "送信文面内容", type: "link", value: job.formContent });
+    if (job.inputInfo) displayDetailItems.push({ title: "入力情報リスト", type: "link", value: job.inputInfo });
+    if (job.siteUrl) displayDetailItems.push({ title: "抽出サイトURL", type: "link", value: job.siteUrl });
+    if (job.targetItems) displayDetailItems.push({ title: "入力項目指示書", type: "link", value: job.targetItems });
+    if (job.additionalLinkUrl) displayDetailItems.push({ title: job.additionalLinkTitle || "その他追加リンク", type: "link", value: job.additionalLinkUrl });
+  }
+
   return (
     <WorkerShell title="案件詳細" subTitle="業務内容の確認と打刻">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 max-w-full mx-auto pb-32 text-slate-900 font-sans antialiased">
@@ -435,7 +453,9 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </button>
             <div className="flex gap-2">
               <span className="bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded font-bold text-[10px]">
-                {job.jobType === 'form_posting' ? '✉️ フォーム投稿' : '📋 リスト作成'}
+                {job.jobType === 'form_posting' ? '✉️ フォーム投稿' 
+                 : job.jobType === 'list_creation' ? '📋 リスト作成' 
+                 : (job.jobType || "未設定")}
               </span>
               {job.urgency === "3" && (
                 <span className="text-[10px] font-black px-1.5 py-0.5 bg-rose-50 text-rose-700 rounded border border-rose-300">至急</span>
@@ -512,62 +532,43 @@ export default function WorkerJobDetailPage({ params }: WorkerJobDetailPageProps
             </div>
           </div>
 
-          {/* 業務詳細リンク集パッケージ */}
+          {/* 💡【改修】業務詳細（自由追加されたリンク・指示テキスト項目の一覧表示） */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
             <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
-              🔗 業務詳細（各種リンク設定）
+              🔗 業務詳細（リンク・指示テキスト設定）
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
-              {job.jobType === "form_posting" ? (
-                <>
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600">📄 送信文面内容</span>
-                    {job.formContent ? (
-                      <a href={job.formContent} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
-                        本文を開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              {displayDetailItems.length > 0 ? (
+                displayDetailItems.map((item, idx) => {
+                  const hasValue = item.value && String(item.value).trim().length > 0;
+                  const isLinkValid = isValidUrl(item.value);
 
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600">📋 入力情報リスト</span>
-                    {job.inputInfo ? (
-                      <a href={job.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
-                        指示書を開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
-                  </div>
-
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600 truncate max-w-[130px]">
-                      🔗 {job.additionalLinkTitle || "その他追加リンク"}
-                    </span>
-                    {job.additionalLinkUrl ? (
-                      <a href={job.additionalLinkUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
-                        リンクを開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
-                  </div>
-                </>
+                  return (
+                    <div key={idx} className="flex flex-col bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold gap-1.5">
+                      <span className="text-slate-600 border-b border-slate-200 pb-1">{item.title || "無題の項目"}</span>
+                      {hasValue ? (
+                        (item.type === 'link' && isLinkValid) ? (
+                          <a 
+                            href={item.value.trim()} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1.5 rounded transition-colors shadow-sm cursor-pointer text-center truncate mt-1"
+                          >
+                            ↗ リンクを開く
+                          </a>
+                        ) : (
+                          <div className="text-xs font-medium text-slate-800 whitespace-pre-wrap pt-1 leading-relaxed">
+                            {item.value}
+                          </div>
+                        )
+                      ) : (
+                        <span className="text-slate-400 font-normal text-[10px] text-center py-1.5 mt-1 border border-dashed border-slate-300 rounded bg-white">未登録</span>
+                      )}
+                    </div>
+                  );
+                })
               ) : (
-                <>
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600">🌐 抽出ターゲットサイト</span>
-                    {job.siteUrl ? (
-                      <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
-                        サイトを開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
-                  </div>
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600">📋 入力項目（指示書等）</span>
-                    {job.targetItems ? (
-                      <a href={job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm">
-                        指示書を開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
-                  </div>
-                </>
+                <div className="col-span-full p-4 text-center text-[10px] text-slate-400 italic">業務詳細の登録はありません。</div>
               )}
             </div>
           </div>
