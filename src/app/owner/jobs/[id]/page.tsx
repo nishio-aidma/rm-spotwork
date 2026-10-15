@@ -67,7 +67,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             };
           }
 
-          // 打刻ログ(workLogs)からこの案件の時間を合算
+          // 本物の打刻ログ(workLogs)からこの案件の時間を合算
           const logsQuery = query(collection(db, "workLogs"), where("jobId", "==", id));
           const logsSnap = await getDocs(logsQuery);
           const realTimeMap: { [key: string]: number } = {};
@@ -174,6 +174,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       }
 
       const jobUrl = `https://rm-spotwork.vercel.app/owner/jobs/${targetJob.id}`;
+      
       const jobTypeName = targetJob.jobType === "form_posting" ? "✉️ フォーム投稿" 
                         : targetJob.jobType === "list_creation" ? "📋 リスト作成" 
                         : (targetJob.jobType || "未設定");
@@ -402,7 +403,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         count: job.count || 100,
         workerLimit: job.workerLimit || 1,
         deadline: job.deadline || "",
-        detailItems: job.detailItems || [], // 💡【追加】新しい作業詳細項目を確実に引き継ぐ
+        detailItems: job.detailItems || [], // 新しい作業詳細を確実に引き継ぎ
         inputInfo: job.inputInfo || "",
         targetItems: job.targetItems || "",
         formContent: job.formContent || "",
@@ -432,12 +433,13 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
   const workerLimit = job.workerLimit || 1;
 
-  // 💡【新仕様】新形式（detailItems）と旧形式の自動変換・統合処理
+  // 💡【修正】新形式（detailItems）の読み込みと、旧形式（formContentなど）の統合表示処理を安全に改善
   let displayDetailItems: any[] = [];
   if (job.detailItems && Array.isArray(job.detailItems) && job.detailItems.length > 0) {
+    // 新形式のデータがある場合はそのまま使用する
     displayDetailItems = job.detailItems;
   } else {
-    // 過去に作成された旧案件用の救済表示
+    // 古い形式のデータしか無い場合は、新形式の見た目に変換して配列に詰め込む（救済処理）
     if (job.formContent) displayDetailItems.push({ title: "送信文面内容", type: "link", value: job.formContent });
     if (job.inputInfo) displayDetailItems.push({ title: "入力情報リスト", type: "link", value: job.inputInfo });
     if (job.siteUrl) displayDetailItems.push({ title: "抽出サイトURL", type: "link", value: job.siteUrl });
@@ -532,7 +534,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           </div>
 
-          {/* 💡【新仕様】作業詳細セクション（自由追加項目の一覧表示） */}
+          {/* 💡【修正】作業詳細セクション */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
             <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
               🔗 作業詳細（リンク・指示テキスト設定）
@@ -553,11 +555,11 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
                           ↗ リンクを開く
                         </a>
                       ) : (
-                        <span className="text-slate-300 font-normal text-[10px] text-center py-1.5 mt-1 border border-dashed border-slate-300 rounded bg-white">未登録</span>
+                        <span className="text-slate-400 font-normal text-[10px] text-center py-1.5 mt-1 border border-dashed border-slate-300 rounded bg-white">未登録</span>
                       )
                     ) : (
                       <div className="text-xs font-medium text-slate-800 whitespace-pre-wrap pt-1 leading-relaxed">
-                        {item.value || <span className="text-slate-300 font-normal italic">未登録</span>}
+                        {item.value || <span className="text-slate-400 font-normal italic">未登録</span>}
                       </div>
                     )}
                   </div>
