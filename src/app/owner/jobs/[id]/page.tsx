@@ -67,43 +67,17 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             };
           }
 
-          // 💡【解析用】日付も一緒にコンソールに出力する処理
-          console.log("=== 🔍 打刻ログの日付解析開始 ===");
+          // 打刻ログ(workLogs)からこの案件の時間を合算
           const logsQuery = query(collection(db, "workLogs"), where("jobId", "==", id));
           const logsSnap = await getDocs(logsQuery);
           const realTimeMap: { [key: string]: number } = {};
 
           logsSnap.forEach(d => {
             const log = d.data();
-            
-            // 日付の変換処理
-            let logDateStr = "日付不明";
-            if (log.timestamp) {
-              const t = log.timestamp.toDate ? log.timestamp.toDate() : new Date(log.timestamp.seconds * 1000);
-              logDateStr = t.toLocaleDateString("ja-JP");
-            }
-
-            console.log(`📅 [日付: ${logDateStr}] ワーカーID: ${log.workerId} | 時間: ${Math.floor((log.seconds || 0) / 60)}分 (${log.seconds}秒)`);
-
             if (log.workerId && log.seconds) {
               realTimeMap[log.workerId] = (realTimeMap[log.workerId] || 0) + Number(log.seconds);
             }
           });
-          console.log("=== 🔍 解析終了 ===");
-
-          // 💡【原因追究用】廻立さんの特定案件のログをすべて洗い出し、jobIdがどうなっているかを確認します
-          const allLogsSnap = await getDocs(collection(db, "workLogs"));
-          console.log("=== 🔍 53分の差異 追跡調査 ===");
-          allLogsSnap.docs.forEach(docD => {
-            const l = docD.data();
-            // 廻立様（KHZZ054dPShnT8VV62jVwzHA6IV2）で、案件名がリスト精査業務のもの
-            if (l.workerId === "KHZZ054dPShnT8VV62jVwzHA6IV2" && l.jobTitle && l.jobTitle.includes("リスト精査業務_有限会社フロンティア商事_ノベルティ制作")) {
-              const dateObj = l.timestamp?.toDate ? l.timestamp.toDate() : new Date(l.timestamp?.seconds * 1000 || 0);
-              const dateStr = dateObj.toLocaleDateString("ja-JP");
-              console.log(`日付: ${dateStr} | 時間: ${Math.floor((l.seconds || 0)/60)}分 | 保存されているjobId: "${l.jobId}"`);
-            }
-          });
-          console.log("=== 🔍 追跡終了 ===");
 
           if (processedJob.workers) {
             Object.keys(processedJob.workers).forEach(uid => {
@@ -156,6 +130,15 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
     return `${h}h ${m}m`;
   };
 
+  // URLバリデーション判定用ヘルパー
+  const isValidUrl = (url: string) => {
+    try {
+      return url.startsWith("http://") || url.startsWith("https://");
+    } catch {
+      return false;
+    }
+  };
+
   // クリップボードコピー関数
   const handleCopyToClipboard = (text: string, fieldName: string) => {
     if (!text || text === "-") return;
@@ -191,7 +174,9 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
       }
 
       const jobUrl = `https://rm-spotwork.vercel.app/owner/jobs/${targetJob.id}`;
-      const jobTypeName = targetJob.jobType === "form_posting" ? "✉️ フォーム投稿" : "📋 リスト作成";
+      const jobTypeName = targetJob.jobType === "form_posting" ? "✉️ フォーム投稿" 
+                        : targetJob.jobType === "list_creation" ? "📋 リスト作成" 
+                        : (targetJob.jobType || "未設定");
 
       const messageBody = `🚀 【案件公開通知】新しい案件が公開されました！\n\n【案件タイトル】 ${targetJob.title || "未設定"}\n【仕事種別】 ${jobTypeName}\n【SCクライアント】 ${targetJob.scClient || "-"}\n【予定作業件数】 ${targetJob.count || 0} 件\n【指定納期】 ${targetJob.deadline || "未設定"}\n\n👇 案件の詳細確認・受諾はこちらから！\n${jobUrl}`;
 
@@ -417,6 +402,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
         count: job.count || 100,
         workerLimit: job.workerLimit || 1,
         deadline: job.deadline || "",
+        detailItems: job.detailItems || [], // 💡【追加】新しい作業詳細項目を確実に引き継ぐ
         inputInfo: job.inputInfo || "",
         targetItems: job.targetItems || "",
         formContent: job.formContent || "",
@@ -446,6 +432,19 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
   const currentWorkerCount = job.workers ? Object.keys(job.workers).length : 0;
   const workerLimit = job.workerLimit || 1;
 
+  // 💡【新仕様】新形式（detailItems）と旧形式の自動変換・統合処理
+  let displayDetailItems: any[] = [];
+  if (job.detailItems && Array.isArray(job.detailItems) && job.detailItems.length > 0) {
+    displayDetailItems = job.detailItems;
+  } else {
+    // 過去に作成された旧案件用の救済表示
+    if (job.formContent) displayDetailItems.push({ title: "送信文面内容", type: "link", value: job.formContent });
+    if (job.inputInfo) displayDetailItems.push({ title: "入力情報リスト", type: "link", value: job.inputInfo });
+    if (job.siteUrl) displayDetailItems.push({ title: "抽出サイトURL", type: "link", value: job.siteUrl });
+    if (job.targetItems) displayDetailItems.push({ title: "入力項目指示書", type: "link", value: job.targetItems });
+    if (job.additionalLinkUrl) displayDetailItems.push({ title: job.additionalLinkTitle || "その他追加リンク", type: "link", value: job.additionalLinkUrl });
+  }
+
   return (
     <OwnerShell title="案件詳細・管理デスク" subTitle="発注内容の確認とワーカー稼働の監視">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 max-w-full mx-auto pb-32 text-slate-900 font-sans antialiased">
@@ -462,7 +461,9 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </button>
             <div className="flex gap-2">
               <span className="bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded font-bold text-[10px]">
-                {job.jobType === 'form_posting' ? '✉️ フォーム投稿' : '📋 リスト作成'}
+                {job.jobType === 'form_posting' ? '✉️ フォーム投稿' 
+                 : job.jobType === 'list_creation' ? '📋 リスト作成' 
+                 : (job.jobType || "未設定")}
               </span>
               {job.urgency === "3" && (
                 <span className="text-[10px] font-black px-1.5 py-0.5 bg-rose-50 text-rose-700 rounded border border-rose-300 animate-pulse">至急</span>
@@ -531,59 +532,38 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
             </div>
           </div>
 
+          {/* 💡【新仕様】作業詳細セクション（自由追加項目の一覧表示） */}
           <div className="bg-white border-2 border-slate-300 rounded p-4 space-y-3 shadow-sm">
             <h2 className="text-[11px] font-black text-slate-500 uppercase tracking-wider border-l-2 border-[#5CA685] pl-2">
-              🔗 作業詳細（各種リンク設定）
+              🔗 作業詳細（リンク・指示テキスト設定）
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
-              {job.jobType === "form_posting" ? (
-                <>
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600">📄 送信文面内容</span>
-                    {job.formContent ? (
-                      <a href={job.formContent} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
-                        リンクを開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              {displayDetailItems.length > 0 ? (
+                displayDetailItems.map((item, idx) => (
+                  <div key={idx} className="flex flex-col bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold gap-1.5">
+                    <span className="text-slate-600 border-b border-slate-200 pb-1">{item.title || "無題の項目"}</span>
+                    {item.type === 'link' ? (
+                      item.value && isValidUrl(item.value) ? (
+                        <a 
+                          href={item.value} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1.5 rounded transition-colors shadow-sm cursor-pointer text-center truncate mt-1"
+                        >
+                          ↗ リンクを開く
+                        </a>
+                      ) : (
+                        <span className="text-slate-300 font-normal text-[10px] text-center py-1.5 mt-1 border border-dashed border-slate-300 rounded bg-white">未登録</span>
+                      )
+                    ) : (
+                      <div className="text-xs font-medium text-slate-800 whitespace-pre-wrap pt-1 leading-relaxed">
+                        {item.value || <span className="text-slate-300 font-normal italic">未登録</span>}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600">📋 入力情報リスト</span>
-                    {job.inputInfo ? (
-                      <a href={job.inputInfo} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
-                        リンクを開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
-                  </div>
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600 truncate max-w-[130px]">
-                      🔗 {job.additionalLinkTitle || "その他追加リンク"}
-                    </span>
-                    {job.additionalLinkUrl ? (
-                      <a href={job.additionalLinkUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
-                        リンクを開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
-                  </div>
-                </>
+                ))
               ) : (
-                <>
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600">🌐 抽出ターゲットサイト</span>
-                    {job.siteUrl ? (
-                      <a href={job.siteUrl} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
-                        リンクを開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
-                  </div>
-                  <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded text-xs font-bold">
-                    <span className="text-slate-600">📋 入力項目（指示書等）</span>
-                    {job.targetItems ? (
-                      <a href={job.targetItems} target="_blank" rel="noopener noreferrer" className="bg-[#5CA685] hover:bg-[#4A9272] text-white text-[10px] font-black px-3 py-1 rounded transition-colors shadow-sm cursor-pointer">
-                        リンクを開く ↗
-                      </a>
-                    ) : <span className="text-slate-300 font-normal">未登録</span>}
-                  </div>
-                </>
+                <div className="col-span-full p-4 text-center text-[10px] text-slate-400 italic">作業詳細の登録はありません。</div>
               )}
             </div>
           </div>
@@ -594,7 +574,7 @@ export default function OwnerJobDetailPage({ params }: OwnerJobDetailPageProps) 
               {Array.isArray(job.procedures) && job.procedures.length > 0 ? (
                 job.procedures.map((step: string, i: number) => (
                   <div key={i} className="flex gap-3 items-center p-2.5 bg-white text-xs">
-                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 font-mono font-bold rounded">{i + 1}</span>
+                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 font-mono font-bold rounded shrink-0">{i + 1}</span>
                     <p className="font-bold text-slate-800 flex-1">{step || "未設定"}</p>
                   </div>
                 ))
